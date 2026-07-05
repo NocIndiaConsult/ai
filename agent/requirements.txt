@@ -1,1 +1,14 @@
 pyinstaller>=6.0
+
+# --- Required for real device polling (do NOT remove) ---
+# Without these, MikroTik REST / SNMP / SSH polling silently falls back
+# to a plain TCP port-scan / ping check instead of actually talking to
+# the device.
+requests>=2.31           # MikroTik RouterOS REST API polling
+paramiko>=3.4             # SSH snapshot polling (MikroTik/other CLI vendors)
+pysnmp>=7.1                # SNMP polling (async HLAPI, see local_polling.py)
+
+# --- Desktop window for the agent UI ---
+# Without this the agent still works, but falls back to opening the
+# dashboard in the default web browser instead of a native window.
+pywebview>=5.0

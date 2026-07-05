@@ -175,6 +175,20 @@ class LocalNetworkPoller:
                 reachable = True
             except Exception:
                 interfaces = []
+        mac_table: list[dict[str, Any]] = []
+        try:
+            hosts_data = self._rest_get(host, "/rest/interface/bridge/host", username, password)
+            if isinstance(hosts_data, dict):
+                hosts_data = hosts_data.get("result") or hosts_data.get("data") or []
+            for row in hosts_data if isinstance(hosts_data, list) else []:
+                if not isinstance(row, dict):
+                    continue
+                mac_addr = self._norm(row.get("mac-address") or row.get("mac_address"))
+                iface = self._norm(row.get("on-interface") or row.get("interface") or row.get("bridge"))
+                if mac_addr and iface:
+                    mac_table.append({"mac": mac_addr.lower(), "interface": iface})
+        except Exception:
+            mac_table = []
         if isinstance(interfaces, dict):
             interfaces = interfaces.get("result") or interfaces.get("data") or []
         normalized: list[dict[str, Any]] = []
@@ -218,6 +232,7 @@ class LocalNetworkPoller:
                 down_ports.append(name)
         cpu = None
         mem = None
+        mem_total = None
         uptime = None
         temperature = None
         serial = None
@@ -226,6 +241,7 @@ class LocalNetworkPoller:
             uptime = resource.get("uptime")
             cpu = resource.get("cpu-load") or resource.get("cpu")
             mem = resource.get("free-memory") or resource.get("memory")
+            mem_total = resource.get("total-memory")
             temperature = resource.get("temperature")
             serial = resource.get("board-name") or resource.get("serial-number")
             mac = resource.get("board-identity") or resource.get("base-mac")
@@ -237,10 +253,12 @@ class LocalNetworkPoller:
             "ports_admin_down": len([row for row in normalized if row.get("status") == "admin_down"]),
             "cpu": float(re.search(r"-?\d+(?:\.\d+)?", str(cpu)).group(0)) if cpu is not None and re.search(r"-?\d+(?:\.\d+)?", str(cpu)) else 0.0,
             "memory": float(re.search(r"-?\d+(?:\.\d+)?", str(mem)).group(0)) if mem is not None and re.search(r"-?\d+(?:\.\d+)?", str(mem)) else 0.0,
+            "memory_total": float(re.search(r"-?\d+(?:\.\d+)?", str(mem_total)).group(0)) if mem_total is not None and re.search(r"-?\d+(?:\.\d+)?", str(mem_total)) else None,
             "uptime": uptime,
             "temperature": temperature,
             "serial_number": serial,
             "mac_address": mac,
+            "mac_table": mac_table,
             "note": "MikroTik REST telemetry snapshot.",
         }
         alerts = []
@@ -289,6 +307,19 @@ class LocalNetworkPoller:
             ports.append({"name": name, "status": status, "raw": line, "running": "running=true" in line.lower()})
             if status in {"down", "admin_down"}:
                 down_ports.append(name)
+        mac_table: list[dict[str, Any]] = []
+        try:
+            mac_output = self._ssh_command(host, username, password, " /interface bridge host print without-paging")
+            for mline in mac_output.splitlines():
+                mline = mline.strip()
+                if not mline or "mac-address=" not in mline:
+                    continue
+                mac_match = re.search(r'mac-address=([0-9A-Fa-f:]+)', mline)
+                iface_match = re.search(r'(?:on-interface|interface)=([^ ]+)', mline)
+                if mac_match and iface_match:
+                    mac_table.append({"mac": mac_match.group(1).strip().lower(), "interface": iface_match.group(1).strip().strip('"')})
+        except Exception:
+            mac_table = []
         alerts = []
         for port_name in down_ports:
             alerts.append(
@@ -301,7 +332,7 @@ class LocalNetworkPoller:
                     "down_ports": [port_name],
                 }
             )
-        return {"host": host, "reachable": reachable or bool(output), "latency_ms": None, "ping_output": "ssh-snapshot", "device_type": "switch", "protocol": "ssh", "summary": {"ports": len(ports), "port_details": ports, "ports_down": len(down_ports), "ports_up": len(ports) - len(down_ports), "note": "SSH snapshot collected."}, "alerts": alerts}
+        return {"host": host, "reachable": reachable or bool(output), "latency_ms": None, "ping_output": "ssh-snapshot", "device_type": "switch", "protocol": "ssh", "summary": {"ports": len(ports), "port_details": ports, "ports_down": len(down_ports), "ports_up": len(ports) - len(down_ports), "mac_table": mac_table, "note": "SSH snapshot collected."}, "alerts": alerts}
 
     def _snmp_snapshot(self, device: dict[str, Any]) -> dict[str, Any]:
         host = self._device_host(device)

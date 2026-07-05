@@ -4,6 +4,7 @@ import argparse
 import importlib
 import os
 import platform
+import re
 import socket
 import importlib.util
 import sys
@@ -106,6 +107,9 @@ class WindowsAgent:
         self.last_local_alerts: list[dict[str, Any]] = []
         self.active_local_alerts: list[dict[str, Any]] = []
         self.local_devices: list[dict[str, Any]] = []
+        self._iface_stats_history: dict[str, dict[str, dict[str, Any]]] = {}
+        self._global_mac_location: dict[str, dict[str, Any]] = {}
+        self._global_mac_flap_counts: dict[str, int] = {}
         self.last_discovery_at: str | None = None
         if not getattr(self.settings, "local_targets", None):
             self.settings.local_targets = self.cache.load_local_targets()
@@ -178,6 +182,8 @@ class WindowsAgent:
                         "latency_ms": result.get("latency_ms"),
                     }
                 )
+            alerts.extend(self._detect_device_health_alerts(str(result.get("host") or ""), result))
+        alerts.extend(self._detect_network_loop_alerts(results))
         self.last_local_inventory = results
         self.cache.save_local_targets(targets)
         self.cache.save_local_devices(self.local_devices)
@@ -199,6 +205,197 @@ class WindowsAgent:
         if self.active_local_alerts:
             self.cache.add_event("local_alert", {"alerts": self.active_local_alerts, "at": utc_now()})
         self._heartbeat_once()
+
+    def _detect_device_health_alerts(self, host: str, result: dict[str, Any]) -> list[dict[str, Any]]:
+        alerts: list[dict[str, Any]] = []
+        summary = result.get("summary")
+        if not host or not isinstance(summary, dict):
+            return alerts
+        now_ts = time.time()
+
+        # CPU threshold
+        cpu = summary.get("cpu")
+        if isinstance(cpu, (int, float)) and cpu >= 90:
+            alerts.append({
+                "event_type": "device.cpu_high",
+                "severity": "critical" if cpu >= 95 else "warning",
+                "host": host,
+                "summary": f"{host} CPU usage at {cpu:.0f}%",
+            })
+
+        # Memory threshold (needs both free and total to compute a real percentage)
+        mem = summary.get("memory")
+        mem_total = summary.get("memory_total")
+        if isinstance(mem, (int, float)) and isinstance(mem_total, (int, float)) and mem_total > 0:
+            free_pct = (mem / mem_total) * 100
+            if free_pct <= 10:
+                alerts.append({
+                    "event_type": "device.memory_low",
+                    "severity": "critical" if free_pct <= 5 else "warning",
+                    "host": host,
+                    "summary": f"{host} free memory at {free_pct:.0f}%",
+                })
+
+        # Temperature threshold
+        temperature = summary.get("temperature")
+        temp_val = None
+        try:
+            if temperature is not None:
+                match = re.search(r"-?\d+(?:\.\d+)?", str(temperature))
+                temp_val = float(match.group(0)) if match else None
+        except Exception:
+            temp_val = None
+        if temp_val is not None and temp_val >= 70:
+            alerts.append({
+                "event_type": "device.temperature_high",
+                "severity": "critical",
+                "host": host,
+                "summary": f"{host} temperature at {temp_val:.0f}C",
+            })
+
+        # Interface flapping + unusual bandwidth (compare against last poll)
+        prev_iface = self._iface_stats_history.get(host, {})
+        curr_iface: dict[str, dict[str, Any]] = {}
+        for row in summary.get("port_details") or []:
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("name") or "").strip()
+            if not name:
+                continue
+            try:
+                rx = float(row.get("rx-byte") or 0)
+                tx = float(row.get("tx-byte") or 0)
+            except Exception:
+                rx = tx = 0.0
+            try:
+                link_downs = int(float(row.get("link-downs") or 0))
+            except Exception:
+                link_downs = 0
+            entry: dict[str, Any] = {"rx": rx, "tx": tx, "ts": now_ts, "link_downs": link_downs}
+            prev = prev_iface.get(name)
+            if prev:
+                elapsed = max(now_ts - float(prev.get("ts", now_ts)), 1.0)
+                rate_bps = max(0.0, ((rx - float(prev.get("rx", rx))) + (tx - float(prev.get("tx", tx)))) * 8 / elapsed)
+                baseline = prev.get("rate_bps")
+                if baseline and baseline > 1_000_000 and rate_bps > baseline * 5:
+                    alerts.append({
+                        "event_type": "device.unusual_traffic",
+                        "severity": "warning",
+                        "host": host, "port": name,
+                        "summary": f"{host} {name} traffic spiked to {rate_bps / 1_000_000:.1f} Mbps",
+                    })
+                elif rate_bps > 800_000_000:
+                    alerts.append({
+                        "event_type": "device.unusual_traffic",
+                        "severity": "critical",
+                        "host": host, "port": name,
+                        "summary": f"{host} {name} sustained traffic at {rate_bps / 1_000_000:.0f} Mbps",
+                    })
+                entry["rate_bps"] = rate_bps
+                downs_delta = link_downs - int(prev.get("link_downs", link_downs))
+                if downs_delta >= 3:
+                    alerts.append({
+                        "event_type": "device.interface_flapping",
+                        "severity": "critical",
+                        "host": host, "port": name,
+                        "summary": f"{host} {name} flapped {downs_delta}x since last check, possible loop or bad cable",
+                    })
+            curr_iface[name] = entry
+        self._iface_stats_history[host] = curr_iface
+
+        # Catch-all: surface any probe-level error as its own alert
+        if result.get("probe_error"):
+            alerts.append({
+                "event_type": "device.probe_error",
+                "severity": "warning",
+                "host": host,
+                "summary": f"{host} probe error: {result.get('probe_error')}",
+            })
+        return alerts
+
+    def _detect_network_loop_alerts(self, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Correlates MAC sightings across every switch polled in this same cycle
+        to pinpoint exactly which switch(es)/port(s) a loop is coming from,
+        instead of raising the same generic alert on all 10 switches at once."""
+        alerts: list[dict[str, Any]] = []
+        now_ts = time.time()
+
+        # Collect every (host, interface) a MAC was seen on, in this single poll pass
+        sightings: dict[str, list[dict[str, str]]] = {}
+        for result in results:
+            host = str(result.get("host") or "").strip()
+            summary = result.get("summary") or {}
+            if not host or not isinstance(summary, dict):
+                continue
+            for entry in summary.get("mac_table") or []:
+                if not isinstance(entry, dict):
+                    continue
+                mac = str(entry.get("mac") or "").strip()
+                iface = str(entry.get("interface") or "").strip()
+                if not mac or not iface:
+                    continue
+                sightings.setdefault(mac, []).append({"host": host, "interface": iface})
+
+        # Strongest signal: same MAC seen in 2+ places within the SAME scan.
+        # A MAC can only physically exist on one port at a time, so this
+        # pinpoints the exact switch/port pair forming the loop.
+        confirmed_macs: set[str] = set()
+        for mac, locs in sightings.items():
+            unique_locs = list({(l["host"], l["interface"]): l for l in locs}.values())
+            if len(unique_locs) <= 1:
+                continue
+            confirmed_macs.add(mac)
+            switches_involved = sorted({l["host"] for l in unique_locs})
+            where = " <-> ".join(f"{l['host']}:{l['interface']}" for l in unique_locs)
+            alerts.append({
+                "event_type": "network.loop_confirmed",
+                "severity": "critical",
+                "host": switches_involved[0],
+                "port": unique_locs[0]["interface"],
+                "summary": f"Loop pinpointed at {where} - MAC {mac} seen in multiple places in one scan",
+                "switches": switches_involved,
+                "locations": unique_locs,
+                "mac": mac,
+            })
+
+        # Weaker but earlier signal: MAC keeps moving poll-over-poll. Tracks
+        # whether it moved to a different SWITCH (loop spans multiple
+        # switches - both ends of the redundant link get named) or just a
+        # different port on the same switch (self-loop on one device).
+        for mac, locs in sightings.items():
+            if mac in confirmed_macs:
+                continue
+            current = locs[0]
+            prev = self._global_mac_location.get(mac)
+            self._global_mac_location[mac] = {"host": current["host"], "interface": current["interface"], "ts": now_ts}
+            if not prev:
+                continue
+            moved = prev.get("host") != current["host"] or prev.get("interface") != current["interface"]
+            if moved and (now_ts - float(prev.get("ts", 0))) < 90:
+                self._global_mac_flap_counts[mac] = self._global_mac_flap_counts.get(mac, 0) + 1
+            else:
+                self._global_mac_flap_counts[mac] = max(0, self._global_mac_flap_counts.get(mac, 0) - 1)
+            if self._global_mac_flap_counts.get(mac, 0) >= 3:
+                cross_switch = prev.get("host") != current["host"]
+                if cross_switch:
+                    alerts.append({
+                        "event_type": "network.loop_suspected",
+                        "severity": "critical",
+                        "host": current["host"],
+                        "summary": f"MAC {mac} bouncing between {prev.get('host')}:{prev.get('interface')} and {current['host']}:{current['interface']} - check the link between these two switches",
+                        "switches": sorted({str(prev.get("host")), current["host"]}),
+                        "mac": mac,
+                    })
+                else:
+                    alerts.append({
+                        "event_type": "device.mac_flapping",
+                        "severity": "warning",
+                        "host": current["host"],
+                        "summary": f"{current['host']}: MAC {mac} flapping between its own ports {prev.get('interface')} and {current['interface']} - likely a self-loop cable on this switch",
+                        "switches": [current["host"]],
+                        "mac": mac,
+                    })
+        return alerts
 
     def _alert_key(self, alert: dict[str, Any]) -> str:
         host = str(alert.get("host") or alert.get("device") or alert.get("mgmt_ip") or "").strip()

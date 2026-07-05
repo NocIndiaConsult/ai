@@ -191,7 +191,7 @@ def _build_html() -> str:
           <div class="searchbar"><span>⌕</span><input id="globalSearch" placeholder="Search devices, IPs, logs, alerts..."/><span class="small">⌘ K</span></div>
           <div class="agent-pill"><span class="small">Server Sync</span><div class="online">● Online</div></div>
           <button class="btn" onclick="action('sync')">Sync Now</button>
-          <div class="iconbtn">🔔<span class="iconbadge">3</span></div>
+          <div class="iconbtn">🔔<span class="iconbadge" id="bellBadge" style="display:none">0</span></div>
         </div>
       </div>
       <div class="grid6">
@@ -235,7 +235,7 @@ def _build_html() -> str:
           <div class="stack">
             <div class="card alerts">
               <div class="section-title"><div><h3>Critical Alerts</h3><span>View all</span></div></div>
-              <div class="alert-ok"><div class="okmark">✔</div><div><div style="font-size:18px;font-weight:800">All Clear! 🎉</div><div class="small">No critical alerts at the moment</div><div class="small">Your network is secure and healthy.</div></div></div>
+              <div id="homeAlerts"><div class="alert-ok"><div class="okmark">✔</div><div><div style="font-size:18px;font-weight:800">All Clear! 🎉</div><div class="small">No critical alerts at the moment</div><div class="small">Your network is secure and healthy.</div></div></div></div>
             </div>
             <div class="card">
               <div class="section-title"><div><h3>AI Assistant</h3><span>Powered by advanced AI</span></div></div>
@@ -297,7 +297,7 @@ def _build_html() -> str:
     navItems.forEach(([key,label]) => {
       const b = document.createElement("button");
       const t = document.createElement("span"); t.textContent = label;
-      const s = document.createElement("span"); s.className = "badge"; s.style.display = "none"; s.textContent = "";
+      const s = document.createElement("span"); s.className = "badge"; s.style.display = "none"; s.textContent = ""; s.id = "badge-" + key;
       b.appendChild(t); b.appendChild(s); b.onclick = () => setTab(key); b.id = "nav-" + key; nav.appendChild(b);
     });
     function setTab(tab){
@@ -442,6 +442,34 @@ def _build_html() -> str:
         alerts.appendChild(row);
       });
       if (!alerts.children.length) alerts.innerHTML = '<div class="small">No alerts right now.</div>';
+      const liveAlerts = d.alerts || [];
+      const home = document.getElementById("homeAlerts");
+      if (home) {
+        if (!liveAlerts.length) {
+          home.innerHTML = '<div class="alert-ok"><div class="okmark">✔</div><div><div style="font-size:18px;font-weight:800">All Clear! 🎉</div><div class="small">No critical alerts at the moment</div><div class="small">Your network is secure and healthy.</div></div></div>';
+        } else {
+          home.innerHTML = "";
+          liveAlerts.slice(0, 5).forEach(item => {
+            const sev = String(item.severity || 'info').toLowerCase();
+            const color = sev === 'critical' ? 'var(--bad)' : sev === 'warning' ? 'var(--warn)' : 'var(--blue)';
+            const row = document.createElement("div");
+            row.className = "row";
+            row.style.borderLeft = `3px solid ${color}`;
+            row.innerHTML = `<div><strong>${item.host || '-'}</strong><div class="small">${item.event_type || 'alert'} ? ${item.summary || ''}</div></div><div style="color:${color};text-transform:capitalize">${sev}</div>`;
+            home.appendChild(row);
+          });
+        }
+      }
+      const bell = document.getElementById("bellBadge");
+      if (bell) {
+        if (liveAlerts.length) { bell.style.display = "grid"; bell.textContent = String(liveAlerts.length); }
+        else { bell.style.display = "none"; }
+      }
+      const alertsBadge = document.getElementById("badge-alerts");
+      if (alertsBadge) {
+        if (liveAlerts.length) { alertsBadge.style.display = "inline-block"; alertsBadge.textContent = String(liveAlerts.length); }
+        else { alertsBadge.style.display = "none"; }
+      }
       const agents = document.getElementById("agentState");
       agents.innerHTML = "";
       (d.agents || []).forEach(item => {
@@ -589,6 +617,7 @@ class AgentUI:
             "last_sync_at": self.agent.last_sync_at,
             "last_error": self.cache.get_last_error(),
             "local_targets": list(getattr(self.settings, "local_targets", []) or []),
+            "local_devices": list(getattr(self.settings, "local_devices", []) or []),
             "discovery_cidr": getattr(self.settings, "discovery_cidr", None),
             "last_discovery_at": self.agent.last_discovery_at,
             "model_cache_present": self.cache.latest_model_bundle() is not None,
