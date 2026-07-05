@@ -111,6 +111,7 @@ class WindowsAgent:
         self._global_mac_location: dict[str, dict[str, Any]] = {}
         self._global_mac_flap_counts: dict[str, int] = {}
         self.last_discovery_at: str | None = None
+        self._server_devices_restored = False
         if not getattr(self.settings, "local_targets", None):
             self.settings.local_targets = self.cache.load_local_targets()
         if not getattr(self.settings, "local_devices", None):
@@ -125,6 +126,53 @@ class WindowsAgent:
         if self.settings.agent_id and self.settings.agent_key:
             return
         self.settings = self.client.register(self.settings)
+
+    def _restore_devices_from_server(self) -> None:
+        """Pull this company's saved device list from the server and merge it
+        into local storage. Devices on the server are keyed by company_id
+        (not by this machine's agent_id), so this brings them back after a
+        reinstall wipes the local cache folder (~/.idea-agent)."""
+        try:
+            response = self.client.list_devices(self.settings)
+        except Exception as exc:
+            self.cache.add_event("device_restore_error", {"error": str(exc), "at": utc_now()})
+            return
+        devices = response.get("devices") if isinstance(response, dict) else None
+        if not isinstance(devices, list) or not devices:
+            return
+        existing_hosts = {
+            str(item.get("host") or item.get("mgmt_ip") or "").strip()
+            for item in self.cache.load_local_devices()
+        }
+        restored = 0
+        for item in devices:
+            if not isinstance(item, dict):
+                continue
+            host = str(item.get("mgmt_ip") or item.get("host") or "").strip()
+            if not host or host in existing_hosts:
+                continue
+            record = {
+                "host": host,
+                "mgmt_ip": host,
+                "name": str(item.get("name") or host).strip() or host,
+                "vendor": str(item.get("vendor") or "").strip(),
+                "vendor_family": str(item.get("vendor_family") or "").strip().lower(),
+                "model": str(item.get("model") or "").strip(),
+                "device_type": str(item.get("device_type") or "switch").strip().lower(),
+                "access_protocol": str(item.get("access_protocol") or "auto").strip().lower(),
+                "username": item.get("username"),
+                "password": item.get("password"),
+                "snmp_community": item.get("snmp_community"),
+                "location": item.get("location"),
+            }
+            self.cache.add_local_device(record)
+            existing_hosts.add(host)
+            restored += 1
+        if restored:
+            self.settings.local_devices = self.cache.load_local_devices()
+            self.settings.local_targets = self.cache.load_local_targets()
+            self.cache.save_agent_profile(self.settings)
+        self.cache.add_event("device_restore", {"restored": restored, "at": utc_now()})
 
     def build_snapshot(self) -> dict[str, Any]:
         latest = self.cache.latest_model_bundle()
@@ -271,9 +319,34 @@ class WindowsAgent:
                 link_downs = int(float(row.get("link-downs") or 0))
             except Exception:
                 link_downs = 0
-            entry: dict[str, Any] = {"rx": rx, "tx": tx, "ts": now_ts, "link_downs": link_downs}
+            port_status = str(row.get("status") or "").strip().lower() or "unknown"
+            entry: dict[str, Any] = {"rx": rx, "tx": tx, "ts": now_ts, "link_downs": link_downs, "status": port_status}
             prev = prev_iface.get(name)
             if prev:
+                # Real-time port up/down transition alert (compares this poll vs previous poll)
+                # "down" = cable/link operationally down, "admin_down" = interface disabled (e.g. via WinBox/CLI)
+                prev_status = str(prev.get("status") or "").strip().lower() or "unknown"
+                was_up = prev_status == "up"
+                is_up = port_status == "up"
+                was_down = prev_status in {"down", "admin_down"}
+                is_down = port_status in {"down", "admin_down"}
+                if is_down and not was_down:
+                    reason = "disabled" if port_status == "admin_down" else "link down"
+                    alerts.append({
+                        "event_type": "port.down",
+                        "severity": "critical",
+                        "host": host, "port": name,
+                        "summary": f"{host} port {name} went DOWN ({reason})",
+                        "status": port_status,
+                    })
+                elif is_up and was_down:
+                    alerts.append({
+                        "event_type": "port.up",
+                        "severity": "info",
+                        "host": host, "port": name,
+                        "summary": f"{host} port {name} came back UP",
+                        "status": "up",
+                    })
                 elapsed = max(now_ts - float(prev.get("ts", now_ts)), 1.0)
                 rate_bps = max(0.0, ((rx - float(prev.get("rx", rx))) + (tx - float(prev.get("tx", tx)))) * 8 / elapsed)
                 baseline = prev.get("rate_bps")
@@ -454,6 +527,9 @@ class WindowsAgent:
 
     def _sync_once(self) -> None:
         self.ensure_registered()
+        if not self._server_devices_restored:
+            self._restore_devices_from_server()
+            self._server_devices_restored = True
         sync = self.client.fetch_and_apply_sync(self.settings)
         self.model_bundle = sync.get("model_bundle")
         self.last_sync_at = utc_now()

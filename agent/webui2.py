@@ -204,7 +204,7 @@ def _build_html() -> str:
             <div class="card">
               <div class="section-title"><div><h3>Network Overview</h3><span>Real-time network performance and statistics</span></div><div class="subtle-row"><div class="seg">1H</div><div class="seg">6H</div><div class="seg active">12H</div><div class="seg">1D</div><div class="seg">7D</div><div class="seg">30D</div></div></div>
               <div class="subgrid4">
-                <div class="subcard"><div class="metric-title">Devices</div><div class="metric-value" id="mDevices">24</div><div class="metric-sub">Online: 22</div></div>
+                <div class="subcard"><div class="metric-title">Devices</div><div class="metric-value" id="mDevices">0</div><div class="metric-sub" id="mDevicesSub">Online: 0</div></div>
                 <div class="subcard"><div class="metric-title">Bandwidth</div><div class="metric-value">1.2 Gbps</div><div class="metric-sub">↑ 12%</div></div>
                 <div class="subcard"><div class="metric-title">Latency</div><div class="metric-value">18 ms</div><div class="metric-sub">↓ 8%</div></div>
                 <div class="subcard"><div class="metric-title">Uptime</div><div class="metric-value">99.9%</div><div class="metric-sub">Excellent</div></div>
@@ -406,6 +406,12 @@ def _build_html() -> str:
         seenHosts.add(host);
         mergedDevices.push(item);
       });
+      const totalDeviceCount = mergedDevices.length;
+      const onlineDeviceCount = mergedDevices.filter(item => item.reachable !== false).length;
+      const mDevicesEl = document.getElementById("mDevices");
+      const mDevicesSubEl = document.getElementById("mDevicesSub");
+      if (mDevicesEl) mDevicesEl.textContent = String(totalDeviceCount);
+      if (mDevicesSubEl) mDevicesSubEl.textContent = `Online: ${onlineDeviceCount}`;
       mergedDevices.forEach(item => {
         const row = document.createElement("div");
         row.className = "row";
@@ -634,7 +640,7 @@ class AgentUI:
                 {"name": "Diagnosis Agent", "status": "online", "note": f"{unreachable} unresolved host(s)", "load": max(10, min(100, 76 - max(0, unreachable - 1) * 8)), "context": "root cause analysis"},
                 {"name": "Planning Agent", "status": "online", "note": f"{queue_depth} pending command(s)", "load": max(10, min(100, 68 - queue_depth * 2)), "context": "safe remediation"},
                 {"name": "Verification Agent", "status": "online", "note": f"{critical_alerts} critical alert(s)", "load": max(10, min(100, 60 + (1 if reachable else 0) * 8)), "context": "policy gate"},
-                {"name": "Execution Agent", "status": "online", "note": f"{alert_count} alert feed item(s)", "load": max(10, min(100, 48 + (1 if self.last_online_state else 0) * 12)), "context": "remediation path"},
+                {"name": "Execution Agent", "status": "online", "note": f"{alert_count} alert feed item(s)", "load": max(10, min(100, 48 + (1 if self.agent.last_online_state else 0) * 12)), "context": "remediation path"},
             ],
             "history": [
                 {
