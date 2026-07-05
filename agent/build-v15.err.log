@@ -1,0 +1,191 @@
+WARNING: Ignoring invalid distribution -yping-extensions (c:\users\lenovo\appdata\local\programs\python\python39\lib\site-packages)
+WARNING: Ignoring invalid distribution -yping-extensions (c:\users\lenovo\appdata\local\programs\python\python39\lib\site-packages)
+WARNING: Ignoring invalid distribution -yping-extensions (c:\users\lenovo\appdata\local\programs\python\python39\lib\site-packages)
+
+[notice] A new release of pip is available: 25.3 -> 26.0.1
+[notice] To update, run: python.exe -m pip install --upgrade pip
+WARNING: Ignoring invalid distribution -yping-extensions (c:\users\lenovo\appdata\local\programs\python\python39\lib\site-packages)
+WARNING: Ignoring invalid distribution -yping-extensions (c:\users\lenovo\appdata\local\programs\python\python39\lib\site-packages)
+WARNING: Ignoring invalid distribution -yping-extensions (c:\users\lenovo\appdata\local\programs\python\python39\lib\site-packages)
+
+[notice] A new release of pip is available: 25.3 -> 26.0.1
+[notice] To update, run: python.exe -m pip install --upgrade pip
+4794 INFO: PyInstaller: 6.21.0, contrib hooks: 2026.6
+4802 INFO: Python: 3.9.1
+4802 INFO: Platform: Windows-10-10.0.19041-SP0
+4802 INFO: Python environment: C:\Users\LENOVO\AppData\Local\Programs\Python\Python39
+4802 INFO: wrote C:\Users\LENOVO\Documents\idea ai\idea-agent-v15.spec
+5683 INFO: UPX is available and will be used if enabled on build targets.
+5686 INFO: Removing temporary files and cleaning cache in C:\Users\LENOVO\Documents\idea ai\agent\.build-home\.pyinstaller\pyinstaller
+5700 INFO: Module search paths (PYTHONPATH):
+['C:\\Users\\LENOVO\\Documents\\idea ai',
+ 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\python39.zip',
+ 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\DLLs',
+ 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib',
+ 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39',
+ 'C:\\Users\\LENOVO\\Documents\\idea '
+ 'ai\\agent\\.build-home\\RoamingAppData\\Python\\Python39\\site-packages',
+ 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages',
+ 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\win32',
+ 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\win32\\lib',
+ 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\Pythonwin',
+ 'C:\\Users\\LENOVO\\Documents\\idea ai',
+ 'C:\\Users\\LENOVO\\Documents\\idea ai\\agent']
+2080 INFO: deps: Successfully imported "kivy_deps.angle" 0.4.0
+2080 INFO: Logger: Record log in C:\Users\LENOVO\Documents\idea ai\agent\.build-home\.kivy\logs\kivy_26-07-04_30.txt
+[INFO   ] [Logger      ] Record log in C:\Users\LENOVO\Documents\idea ai\agent\.build-home\.kivy\logs\kivy_26-07-04_30.txt
+[INFO   ] [deps        ] Successfully imported "kivy_deps.angle" 0.4.0
+2096 INFO: deps: Successfully imported "kivy_deps.glew" 0.3.1
+[INFO   ] [deps        ] Successfully imported "kivy_deps.glew" 0.3.1
+2096 INFO: deps: Successfully imported "kivy_deps.sdl2" 0.8.0
+[INFO   ] [deps        ] Successfully imported "kivy_deps.sdl2" 0.8.0
+2096 INFO: Kivy: v2.3.1
+[INFO   ] [Kivy        ] v2.3.1
+2096 INFO: Kivy: Installed at "C:\Users\LENOVO\AppData\Local\Programs\Python\Python39\lib\site-packages\kivy\__init__.py"
+[INFO   ] [Kivy        ] Installed at "C:\Users\LENOVO\AppData\Local\Programs\Python\Python39\lib\site-packages\kivy\__init__.py"
+2096 INFO: Python: v3.9.1 (tags/v3.9.1:1e5d33e, Dec  7 2020, 17:08:21) [MSC v.1927 64 bit (AMD64)]
+[INFO   ] [Python      ] v3.9.1 (tags/v3.9.1:1e5d33e, Dec  7 2020, 17:08:21) [MSC v.1927 64 bit (AMD64)]
+2096 INFO: Python: Interpreter at "C:\Users\LENOVO\AppData\Local\Programs\Python\Python39\python.exe"
+[INFO   ] [Python      ] Interpreter at "C:\Users\LENOVO\AppData\Local\Programs\Python\Python39\python.exe"
+2096 INFO: Logger: Purge log fired. Processing...
+[INFO   ] [Logger      ] Purge log fired. Processing...
+2111 INFO: Logger: Purge finished!
+[INFO   ] [Logger      ] Purge finished!
+2127 INFO: KivyMD: 1.2.0, git-Unknown, 2025-01-17 (installed at "C:\Users\LENOVO\AppData\Local\Programs\Python\Python39\lib\site-packages\kivymd\__init__.py")
+[INFO   ] [KivyMD      ] 1.2.0, git-Unknown, 2025-01-17 (installed at "C:\Users\LENOVO\AppData\Local\Programs\Python\Python39\lib\site-packages\kivymd\__init__.py")
+2127 WARNING: KivyMD: Version 1.2.0 is deprecated and is no longer supported. Use KivyMD version 2.0.0 from the master branch (pip install https://github.com/kivymd/KivyMD/archive/master.zip)
+[WARNING] [KivyMD      ] Version 1.2.0 is deprecated and is no longer supported. Use KivyMD version 2.0.0 from the master branch (pip install https://github.com/kivymd/KivyMD/archive/master.zip)
+2148 INFO: Factory: 195 symbols loaded
+[INFO   ] [Factory     ] 195 symbols loaded
+3095 INFO: Image: Providers: img_tex, img_dds, img_sdl2, img_pil (img_ffpyplayer ignored)
+[INFO   ] [Image       ] Providers: img_tex, img_dds, img_sdl2, img_pil (img_ffpyplayer ignored)
+3220 INFO: Text: Provider: sdl2
+[INFO   ] [Text        ] Provider: sdl2
+4747 DEBUG: discover_hook_directories: Hook directories: [('C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\kivymd\\tools\\packaging\\pyinstaller', 0), ('C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\Lib\\site-packages\\numpy\\_pyinstaller', 0), ('C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\webview\\__pyinstaller', 0), ('C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks', -1000), ('C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\_pyinstaller_hooks_contrib', -1000)]
+[DEBUG  ] [discover_hook_directories] Hook directories: [('C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\kivymd\\tools\\packaging\\pyinstaller', 0), ('C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\Lib\\site-packages\\numpy\\_pyinstaller', 0), ('C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\webview\\__pyinstaller', 0), ('C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks', -1000), ('C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\_pyinstaller_hooks_contrib', -1000)]
+13943 INFO: checking Analysis
+13952 INFO: Building Analysis because Analysis-00.toc is non existent
+13952 INFO: Looking for Python shared library...
+13952 INFO: Using Python shared library: C:\Users\LENOVO\AppData\Local\Programs\Python\Python39\python39.dll
+13952 INFO: Running Analysis Analysis-00.toc
+13952 INFO: Target bytecode optimization level: 0
+13952 INFO: Initializing module dependency graph...
+13960 INFO: Initializing module graph hook caches...
+14159 INFO: Analyzing modules for base_library.zip ...
+30936 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+33188 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+42093 INFO: Processing standard module hook 'hook-math.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+49301 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+58182 INFO: Caching module dependency graph...
+58760 INFO: Analyzing C:\Users\LENOVO\Documents\idea ai\agent\main.py
+59086 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+59146 INFO: Analyzing hidden import 'webview'
+59239 INFO: Processing standard module hook 'hook-webview.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\webview\\__pyinstaller'
+62355 INFO: Processing standard module hook 'hook-webbrowser.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+66215 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+66998 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+68727 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+71179 INFO: Processing standard module hook 'hook-jinja2.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+71225 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+71366 INFO: SetuptoolsInfo: initializing cached setuptools info...
+120063 INFO: Processing pre-safe-import-module hook 'hook-gi.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+120264 INFO: Processing standard module hook 'hook-PyQt5.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+122950 INFO: Processing standard module hook 'hook-PyQt5.QtNetwork.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+143308 INFO: Processing standard module hook 'hook-PyQt5.QtCore.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+166306 INFO: Processing standard module hook 'hook-PyQt5.QtWidgets.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+201637 INFO: Processing standard module hook 'hook-PyQt5.QtGui.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+431869 INFO: Processing standard module hook 'hook-clr.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+431956 INFO: Processing standard module hook 'hook-clr_loader.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+432723 INFO: Processing standard module hook 'hook-pycparser.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+435584 INFO: Processing standard module hook 'hook-setuptools.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+435670 INFO: Processing pre-safe-import-module hook 'hook-distutils.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+435670 INFO: Processing pre-find-module-path hook 'hook-distutils.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+442776 INFO: Processing standard module hook 'hook-distutils.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+442900 INFO: Processing standard module hook 'hook-distutils.util.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+443095 INFO: Processing standard module hook 'hook-_osx_support.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+443459 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+443660 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+444127 INFO: Processing pre-safe-import-module hook 'hook-jaraco.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+444154 INFO: Setuptools: 'jaraco' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.jaraco'!
+444185 INFO: Processing standard module hook 'hook-setuptools._vendor.jaraco.text.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+444232 INFO: Processing pre-safe-import-module hook 'hook-importlib_resources.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+444292 INFO: Processing standard module hook 'hook-importlib_resources.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+444443 INFO: Processing pre-safe-import-module hook 'hook-zipp.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+444644 INFO: Processing pre-safe-import-module hook 'hook-more_itertools.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+444644 INFO: Setuptools: 'more_itertools' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.more_itertools'!
+447060 INFO: Processing pre-safe-import-module hook 'hook-backports.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+447060 INFO: Setuptools: 'backports' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.backports'!
+447971 INFO: Processing pre-safe-import-module hook 'hook-importlib_metadata.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+448125 INFO: Processing standard module hook 'hook-importlib_metadata.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+449757 INFO: Processing pre-safe-import-module hook 'hook-tomli.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+452707 INFO: Processing standard module hook 'hook-pkg_resources.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+458486 INFO: Processing pre-safe-import-module hook 'hook-platformdirs.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+458527 INFO: Processing standard module hook 'hook-platformdirs.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+459543 INFO: Processing pre-safe-import-module hook 'hook-wheel.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+469455 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+470055 INFO: Processing standard module hook 'hook-cryptography.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+491178 INFO: hook-cryptography: cryptography does not seem to be using dynamically linked OpenSSL.
+493277 INFO: Processing standard module hook 'hook-bcrypt.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+494777 INFO: Analyzing hidden import 'cache'
+494848 INFO: Processing standard module hook 'hook-sqlite3.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+500025 INFO: Analyzing hidden import 'client'
+500076 INFO: Analyzing hidden import 'local_polling'
+500092 INFO: Analyzing hidden import 'webui'
+500126 INFO: Analyzing hidden import 'webui2'
+500225 INFO: Analyzing hidden import 'agent.cache'
+500275 INFO: Analyzing hidden import 'agent.client'
+500308 INFO: Analyzing hidden import 'agent.local_polling'
+500343 INFO: Analyzing hidden import 'agent.webui'
+500375 INFO: Analyzing hidden import 'agent.webui2'
+500475 INFO: Processing module hooks (post-graph stage)...
+500578 WARNING: Hidden import "importlib_resources.trees" not found!
+500834 WARNING: Hidden import "sip" not found!
+501857 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+505772 INFO: Performing binary vs. data reclassification (134 entries)
+506341 INFO: Looking for ctypes DLLs
+506510 INFO: Analyzing run-time hooks ...
+506526 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+506542 INFO: Including run-time hook 'pyi_rth_cryptography_openssl.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+506544 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+506555 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+506566 INFO: Including run-time hook 'pyi_rth_setuptools.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+506572 INFO: Including run-time hook 'pyi_rth_pkgres.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+506592 INFO: Including run-time hook 'pyi_rth_pyqt5.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+506592 INFO: Processing pre-find-module-path hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+506608 INFO: Processing standard module hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyInstaller\\hooks'
+506687 INFO: Creating base_library.zip...
+506871 INFO: Looking for dynamic libraries
+521267 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyQt5\\Qt5\\bin', 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\jnius', 'C:\\Program Files\\OpenLogic\\jdk-22.0.2.9-hotspot\\bin\\server', 'C:\\Program Files\\OpenLogic\\jdk-22.0.2.9-hotspot\\bin\\server']
+521267 INFO: Extra DLL search directories (PATH): ['C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\PyQt5\\Qt5\\bin']
+539077 WARNING: Library not found: could not resolve 'python38.dll', dependency of 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\cefpython3\\cefpython_py38.pyd'.
+539077 WARNING: Library not found: could not resolve 'python37.dll', dependency of 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\cefpython3\\cefpython_py37.pyd'.
+539077 WARNING: Library not found: could not resolve 'python36.dll', dependency of 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\cefpython3\\cefpython_py36.pyd'.
+539094 WARNING: Library not found: could not resolve 'python35.dll', dependency of 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\cefpython3\\cefpython_py35.pyd'.
+539094 WARNING: Library not found: could not resolve 'python34.dll', dependency of 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\cefpython3\\cefpython_py34.pyd'.
+539094 WARNING: Library not found: could not resolve 'MSVCR100.dll', dependency of 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\cefpython3\\cefpython_py34.pyd'.
+539094 WARNING: Library not found: could not resolve 'python27.dll', dependency of 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\cefpython3\\cefpython_py27.pyd'.
+539094 WARNING: Library not found: could not resolve 'MSVCR90.dll', dependency of 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\cefpython3\\cefpython_py27.pyd'.
+539110 WARNING: Library not found: could not resolve 'MSVCR100.dll', dependency of 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\cefpython3\\MSVCP100.dll'.
+539110 WARNING: Library not found: could not resolve 'MSVCR90.dll', dependency of 'C:\\Users\\LENOVO\\AppData\\Local\\Programs\\Python\\Python39\\lib\\site-packages\\cefpython3\\MSVCP90.dll'.
+539211 INFO: Warnings written to C:\Users\LENOVO\Documents\idea ai\build\idea-agent-v15\warn-idea-agent-v15.txt
+539960 INFO: Graph cross-reference written to C:\Users\LENOVO\Documents\idea ai\build\idea-agent-v15\xref-idea-agent-v15.html
+540323 INFO: checking PYZ
+540338 INFO: Building PYZ because PYZ-00.toc is non existent
+540338 INFO: Building PYZ (ZlibArchive) C:\Users\LENOVO\Documents\idea ai\build\idea-agent-v15\PYZ-00.pyz
+543273 INFO: Building PYZ (ZlibArchive) C:\Users\LENOVO\Documents\idea ai\build\idea-agent-v15\PYZ-00.pyz completed successfully.
+543813 INFO: checking PKG
+543814 INFO: Building PKG because PKG-00.toc is non existent
+543816 INFO: Building PKG (CArchive) idea-agent-v15.pkg
+706217 INFO: Building PKG (CArchive) idea-agent-v15.pkg completed successfully.
+706409 INFO: Bootloader C:\Users\LENOVO\AppData\Local\Programs\Python\Python39\lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+706410 INFO: checking EXE
+706411 INFO: Building EXE because EXE-00.toc is non existent
+706412 INFO: Building EXE from EXE-00.toc
+706414 INFO: Copying bootloader EXE to C:\Users\LENOVO\Documents\idea ai\dist\idea-agent-v15.exe
+706653 INFO: Copying icon to EXE
+707002 INFO: Copying 0 resources to EXE
+707002 INFO: Embedding manifest in EXE
+707237 INFO: Appending PKG archive to EXE
+708805 INFO: Fixing EXE headers
+716200 INFO: Building EXE from EXE-00.toc completed successfully.
+716232 INFO: Build complete! The results are available in: C:\Users\LENOVO\Documents\idea ai\dist
