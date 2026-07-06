@@ -15,7 +15,7 @@ New-Item -ItemType Directory -Force $env:TEMP | Out-Null
 
 python -m pip install -r "$PSScriptRoot\requirements.txt"
 python -m pip install pyinstaller
-python -m PyInstaller --clean --noconfirm --noconsole --onefile --noupx --name idea-agent-v27 `
+python -m PyInstaller --clean --noconfirm --noconsole --onefile --noupx --name idea-agent-v28 `
   --paths "$PSScriptRoot" `
   --hidden-import webview `
   --hidden-import cache `
@@ -30,7 +30,7 @@ python -m PyInstaller --clean --noconfirm --noconsole --onefile --noupx --name i
   --hidden-import agent.webui2 `
   "$PSScriptRoot\main.py"
 
-$built = Join-Path $PSScriptRoot "..\dist\idea-agent-v27.exe"
+$built = Join-Path $PSScriptRoot "..\dist\idea-agent-v28.exe"
 $legacy = Join-Path $PSScriptRoot "..\dist\idea-agent.exe"
 if (Test-Path $built) {
     Copy-Item $built $legacy -Force

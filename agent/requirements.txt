@@ -12,3 +12,10 @@ pysnmp>=7.1                # SNMP polling (async HLAPI, see local_polling.py)
 # Without this the agent still works, but falls back to opening the
 # dashboard in the default web browser instead of a native window.
 pywebview>=5.0
+
+# --- Reliable network adapter enumeration ---
+# Used to detect ALL local IPv4 addresses (including VPN tunnel adapters
+# like OpenVPN/WireGuard) so devices reachable only through a VPN can be
+# discovered. Without this the agent falls back to a less reliable method,
+# it does not stop the agent from running.
+psutil>=5.9

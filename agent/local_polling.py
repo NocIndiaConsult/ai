@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import platform
 import socket
 import re
+import subprocess
+import threading
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 try:
     import requests
@@ -17,6 +20,11 @@ try:
     import paramiko
 except Exception:  # pragma: no cover
     paramiko = None
+
+try:
+    import psutil  # used to enumerate every network adapter (incl. VPN tunnel adapters)
+except Exception:  # pragma: no cover
+    psutil = None
 
 import asyncio
 
@@ -118,6 +126,296 @@ def tcp_probe(host: str, port: int, timeout: float = 0.6) -> dict[str, Any]:
             "open": False,
             "error": str(exc),
         }
+
+
+def _is_windows() -> bool:
+    return platform.system().lower().startswith("win")
+
+
+def _safe_target(target: str) -> str:
+    """Keep only characters valid in a hostname/IP so user input can never be
+    used to inject extra shell/CLI arguments into the ping/tracert command."""
+    value = str(target or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9.:_-]{1,255}", value or ""):
+        return ""
+    return value
+
+
+def run_ping_diagnostic(target: str, count: int = 4, timeout_ms: int = 1000) -> dict[str, Any]:
+    """Run a real ICMP ping (Windows: ping.exe, Linux/Mac: ping) against a
+    device so a technician can see live round-trip results, not just a
+    reachability flag."""
+    host = _safe_target(target)
+    if not host:
+        return {"target": target, "success": False, "output": "Invalid host/IP.", "command": ""}
+    count = max(1, min(int(count or 4), 10))
+    timeout_ms = max(200, min(int(timeout_ms or 1000), 5000))
+    if _is_windows():
+        cmd = ["ping", "-n", str(count), "-w", str(timeout_ms), host]
+    else:
+        cmd = ["ping", "-c", str(count), "-W", str(max(1, timeout_ms // 1000)), host]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=(count * timeout_ms / 1000.0) + 8,
+        )
+        output = ((proc.stdout or "") + (proc.stderr or "")).strip()
+        success = proc.returncode == 0
+    except FileNotFoundError:
+        output = "ping utility not found on this system."
+        success = False
+    except subprocess.TimeoutExpired:
+        output = "Ping timed out."
+        success = False
+    except Exception as exc:
+        output = f"Ping failed: {exc}"
+        success = False
+    return {"target": host, "success": success, "output": output or "No output.", "command": " ".join(cmd)}
+
+
+def run_traceroute_diagnostic(target: str, max_hops: int = 30) -> dict[str, Any]:
+    """Run tracert (Windows) / traceroute (Linux/Mac) so a technician can see
+    every hop between this PC and the destination device."""
+    host = _safe_target(target)
+    if not host:
+        return {"target": target, "success": False, "output": "Invalid host/IP.", "command": ""}
+    max_hops = max(1, min(int(max_hops or 30), 64))
+    if _is_windows():
+        cmd = ["tracert", "-d", "-h", str(max_hops), "-w", "1000", host]
+    else:
+        cmd = ["traceroute", "-m", str(max_hops), host]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=max_hops * 2 + 15)
+        output = ((proc.stdout or "") + (proc.stderr or "")).strip()
+        success = proc.returncode == 0
+    except FileNotFoundError:
+        output = "traceroute/tracert utility not found on this system."
+        success = False
+    except subprocess.TimeoutExpired:
+        output = "Traceroute timed out."
+        success = False
+    except Exception as exc:
+        output = f"Traceroute failed: {exc}"
+        success = False
+    return {"target": host, "success": success, "output": output or "No output.", "command": " ".join(cmd)}
+
+
+def run_dns_lookup(target: str) -> dict[str, Any]:
+    host = _safe_target(target)
+    if not host:
+        return {"target": target, "success": False, "output": "Invalid host/IP."}
+    try:
+        info = socket.gethostbyname_ex(host)
+        name, aliases, addrs = info
+        lines = [f"Name: {name}"]
+        if aliases:
+            lines.append(f"Aliases: {', '.join(aliases)}")
+        lines.append(f"Addresses: {', '.join(addrs)}")
+        return {"target": host, "success": True, "output": "\n".join(lines)}
+    except Exception as exc:
+        return {"target": host, "success": False, "output": f"DNS lookup failed: {exc}"}
+
+
+def run_port_check(target: str, ports: Iterable[int] | None = None) -> dict[str, Any]:
+    host = _safe_target(target)
+    if not host:
+        return {"target": target, "success": False, "output": "Invalid host/IP."}
+    check_ports = [int(p) for p in (ports or [22, 23, 80, 443, 161, 8080, 8291, 3389])]
+    lines = []
+    any_open = False
+    for port in check_ports:
+        probe = tcp_probe(host, port)
+        if probe.get("open"):
+            any_open = True
+            lines.append(f"Port {port}: OPEN ({probe.get('latency_ms')} ms)")
+        else:
+            lines.append(f"Port {port}: closed/filtered")
+    return {"target": host, "success": any_open, "output": "\n".join(lines)}
+
+
+def list_local_ipv4_addresses() -> list[str]:
+    """Every IPv4 address currently bound to this PC's network adapters -
+    not just the one used for outbound internet traffic. This is what makes
+    it possible to notice a VPN tunnel adapter (OpenVPN/WireGuard/IPSec/etc.)
+    in addition to the normal LAN NIC."""
+    addrs: set[str] = set()
+    if psutil is not None:
+        try:
+            for iface_addrs in psutil.net_if_addrs().values():
+                for addr in iface_addrs:
+                    if getattr(addr, "family", None) == socket.AF_INET and addr.address and not addr.address.startswith("127."):
+                        addrs.add(addr.address)
+        except Exception:
+            pass
+    if not addrs:
+        try:
+            _, _, ip_list = socket.gethostbyname_ex(socket.gethostname())
+            for ip in ip_list:
+                if ip and not ip.startswith("127."):
+                    addrs.add(ip)
+        except Exception:
+            pass
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            probe.connect(("8.8.8.8", 80))
+            default_ip = probe.getsockname()[0]
+            if default_ip and not default_ip.startswith("127."):
+                addrs.add(default_ip)
+        finally:
+            probe.close()
+    except Exception:
+        pass
+    return sorted(addrs)
+
+
+def detect_local_cidr() -> str | None:
+    """Guess this PC's own LAN /24 so devices that answer a ping from this
+    machine can be auto-discovered even when no discovery CIDR is configured."""
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            probe.connect(("8.8.8.8", 80))
+            local_ip = probe.getsockname()[0]
+        finally:
+            probe.close()
+        if not local_ip or local_ip.startswith("127."):
+            return None
+        parts = local_ip.split(".")
+        if len(parts) != 4:
+            return None
+        return f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"
+    except Exception:
+        return None
+
+
+def detect_all_local_cidrs() -> list[str]:
+    """Guess a /24 for every network adapter on this PC, including a VPN
+    tunnel adapter, so an outward discovery scan can also cover the VPN
+    side of the network (useful for split-tunnel VPNs where the VPN subnet
+    is small enough and directly routable)."""
+    cidrs: list[str] = []
+    for ip in list_local_ipv4_addresses():
+        parts = ip.split(".")
+        if len(parts) == 4:
+            cidr = f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"
+            if cidr not in cidrs:
+                cidrs.append(cidr)
+    return cidrs
+
+
+class IncomingPingListener:
+    """Watches for ICMP Echo Request ("ping") packets arriving at this PC on
+    any interface - including a VPN tunnel adapter - and reports the source
+    IP of every device that pings this machine.
+
+    This covers the case an outward subnet scan cannot: a device that is far
+    away, only reachable *through* a VPN, whose IP this agent has no way of
+    guessing in advance. The moment that device pings this PC, its source IP
+    is captured here and can be auto-added as a discovered device.
+
+    Needs administrator/root privileges (raw sockets). If that isn't
+    available, `last_error` is set and the rest of the agent keeps working
+    normally - this is a best-effort extra signal, not a hard requirement.
+    """
+
+    def __init__(self, on_ping: "Callable[[str], None]") -> None:
+        self._on_ping = on_ping
+        self._stop = threading.Event()
+        self._threads: list[threading.Thread] = []
+        self.active = False
+        self.last_error: str | None = None
+
+    def start(self) -> None:
+        if self._threads:
+            return
+        self._stop.clear()
+        if _is_windows():
+            bind_ips = list_local_ipv4_addresses() or ["0.0.0.0"]
+            for ip in bind_ips:
+                thread = threading.Thread(target=self._run_windows, args=(ip,), daemon=True)
+                thread.start()
+                self._threads.append(thread)
+        else:
+            thread = threading.Thread(target=self._run_posix, daemon=True)
+            thread.start()
+            self._threads.append(thread)
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _handle_packet(self, packet: bytes) -> None:
+        try:
+            if len(packet) < 20:
+                return
+            ihl = (packet[0] & 0x0F) * 4
+            protocol = packet[9]
+            if protocol != 1 or len(packet) < ihl + 8:
+                return
+            icmp_type = packet[ihl]
+            if icmp_type != 8:  # Echo Request only - ignore replies/other ICMP
+                return
+            src_ip = socket.inet_ntoa(packet[12:16])
+            self._on_ping(src_ip)
+        except Exception:
+            pass
+
+    def _run_windows(self, bind_ip: str) -> None:
+        sock = None
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_IP)
+            sock.bind((bind_ip, 0))
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
+            sock.ioctl(socket.SIO_RCVALL, socket.RCVALL_ON)
+            sock.settimeout(1.0)
+            self.active = True
+            while not self._stop.is_set():
+                try:
+                    packet, _addr = sock.recvfrom(65565)
+                except socket.timeout:
+                    continue
+                except Exception:
+                    break
+                self._handle_packet(packet)
+        except Exception as exc:
+            self.last_error = f"{bind_ip}: {exc}"
+        finally:
+            if sock is not None:
+                try:
+                    sock.ioctl(socket.SIO_RCVALL, socket.RCVALL_OFF)
+                except Exception:
+                    pass
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+
+    def _run_posix(self) -> None:
+        sock = None
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
+            sock.settimeout(1.0)
+            self.active = True
+            while not self._stop.is_set():
+                try:
+                    packet, _addr = sock.recvfrom(65565)
+                except socket.timeout:
+                    continue
+                except Exception:
+                    break
+                self._handle_packet(packet)
+        except PermissionError as exc:
+            self.last_error = f"permission denied - needs root/CAP_NET_RAW: {exc}"
+        except Exception as exc:
+            self.last_error = str(exc)
+        finally:
+            if sock is not None:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
 
 
 @dataclass
@@ -685,6 +983,26 @@ class LocalNetworkPoller:
                 snap["ping_output"] = reach.get("ping_output") or snap.get("ping_output")
                 return snap
         return self.probe_host(host)
+
+    def detect_local_cidr(self) -> str | None:
+        return detect_local_cidr()
+
+    def detect_all_local_cidrs(self) -> list[str]:
+        return detect_all_local_cidrs()
+
+    def diagnose(self, kind: str, target: str, **options: Any) -> dict[str, Any]:
+        """Run a single named diagnostic (ping / traceroute / dns / ports) for
+        the Diagnose tab in the UI."""
+        kind = (kind or "").strip().lower()
+        if kind == "ping":
+            return run_ping_diagnostic(target, count=options.get("count", 4), timeout_ms=options.get("timeout_ms", 1000))
+        if kind in ("tracert", "traceroute"):
+            return run_traceroute_diagnostic(target, max_hops=options.get("max_hops", 30))
+        if kind in ("dns", "nslookup"):
+            return run_dns_lookup(target)
+        if kind in ("ports", "portcheck", "port_check"):
+            return run_port_check(target, ports=options.get("ports"))
+        return {"target": target, "success": False, "output": f"Unknown diagnostic type: {kind}"}
 
     def discover_targets(self, cidr: str | None, manual_targets: Iterable[str | dict[str, Any]] | None = None) -> list[str | dict[str, Any]]:
         targets: list[str | dict[str, Any]] = []

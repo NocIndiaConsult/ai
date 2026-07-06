@@ -289,6 +289,26 @@ def _build_html() -> str:
           <div class="list" id="deviceList"></div>
         </div>
       </section>
+      <section class="tabs" id="tab-diagnose">
+        <div class="card">
+          <div class="section-title"><div><h3>Diagnose</h3><span>Ping, traceroute and other connectivity checks from this PC</span></div></div>
+          <div class="two" style="margin-bottom:12px">
+            <select class="input" id="diagDeviceSelect" onchange="if(this.value) document.getElementById('diagTarget').value=this.value;">
+              <option value="">Pick a saved device (optional)</option>
+            </select>
+            <input class="input" id="diagTarget" placeholder="IP address or hostname to test"/>
+          </div>
+          <div class="flex" style="margin-bottom:12px">
+            <button class="btn" onclick="runDiagnostic('ping')">Ping</button>
+            <button class="btn" onclick="runDiagnostic('tracert')">Traceroute</button>
+            <button class="btn secondary" onclick="runDiagnostic('dns')">DNS Lookup</button>
+            <button class="btn secondary" onclick="runDiagnostic('ports')">Port Check</button>
+          </div>
+          <div class="pill" id="diagStatus" style="margin-bottom:8px">Enter a target and run a test.</div>
+          <div class="pill" id="diagIncomingStatus" style="margin-bottom:12px">Incoming ping capture: checking...</div>
+          <div class="card" style="background:rgba(255,255,255,.03)"><pre id="diagOutput">-</pre></div>
+        </div>
+      </section>
       <section class="tabs" id="tab-topology"><div class="card"><div class="section-title"><div><h3>Topology</h3><span>Interactive network map</span></div></div><div class="stack"><div class="pill">Live topology view coming from network memory</div><div class="pill">Neighbor links and port mapping will populate here</div><div class="pill">Use the discovery list to seed topology auto-layout</div></div></div></section>
       <section class="tabs" id="tab-alerts"><div class="card"><div class="section-title"><div><h3>Alerts</h3><span>Open issues</span></div></div><div class="list" id="alertsList"></div></div></section>
       <section class="tabs" id="tab-ai">
@@ -309,7 +329,7 @@ def _build_html() -> str:
     </main>
   </div>
   <script>
-    const navItems = [["dashboard","Dashboard","▦"],["devices","Devices","🖥"],["topology","Topology","⎇"],["alerts","Alerts","🔔"],["ai","AI Assistant","✦"],["commands","Commands","⌘"],["automation","Automation","⚙"],["reports","Reports","▲"],["settings","Settings","⛭"]];
+    const navItems = [["dashboard","Dashboard","▦"],["devices","Devices","🖥"],["diagnose","Diagnose","🩺"],["topology","Topology","⎇"],["alerts","Alerts","🔔"],["ai","AI Assistant","✦"],["commands","Commands","⌘"],["automation","Automation","⚙"],["reports","Reports","▲"],["settings","Settings","⛭"]];
     const state = {tab:"dashboard",payload:{}};
     let lastMergedDevices = [];
     const nav = document.getElementById("nav");
@@ -329,6 +349,7 @@ def _build_html() -> str:
       const titles = {
         dashboard:["Good evening, Sagar 👋","Your network is healthy and all systems are operational."],
         devices:["Devices","Add and manage local targets"],
+        diagnose:["Diagnose","Ping, traceroute and connectivity checks"],
         topology:["Topology","Interactive network map"],
         alerts:["Alerts","Open issues and queue"],
         ai:["AI Assistant","Powered by advanced AI"],
@@ -438,6 +459,17 @@ def _build_html() -> str:
       document.getElementById("discoveryCidr").value = d.discovery_cidr || "";
       document.getElementById("localTargets").value = (d.local_targets || []).join(", ");
       document.getElementById("snapshotBox").textContent = JSON.stringify(d.snapshot || {}, null, 2);
+      const diagIncoming = document.getElementById("diagIncomingStatus");
+      if (diagIncoming) {
+        const snap = d.snapshot || {};
+        if (snap.incoming_ping_listener_active) {
+          diagIncoming.textContent = "Incoming ping capture: active (devices pinging this PC, including over VPN, are auto-added)";
+        } else if (snap.incoming_ping_listener_error) {
+          diagIncoming.textContent = "Incoming ping capture: inactive - run the agent as Administrator/root to enable it";
+        } else {
+          diagIncoming.textContent = "Incoming ping capture: starting...";
+        }
+      }
       const overview = document.getElementById("historyList");
       overview.innerHTML = "";
       (d.recent_events || []).slice(0, 6).forEach(ev => {
@@ -483,6 +515,20 @@ def _build_html() -> str:
       if (mDevicesEl) mDevicesEl.textContent = String(totalDeviceCount);
       if (mDevicesSubEl) mDevicesSubEl.textContent = `Online: ${onlineDeviceCount}`;
       lastMergedDevices = mergedDevices;
+      const diagSelect = document.getElementById("diagDeviceSelect");
+      if (diagSelect) {
+        const prevValue = diagSelect.value;
+        diagSelect.innerHTML = '<option value="">Pick a saved device (optional)</option>';
+        mergedDevices.forEach(item => {
+          const host = String(item.host || "").trim();
+          if (!host) return;
+          const opt = document.createElement("option");
+          opt.value = host;
+          opt.textContent = `${host}${item.type ? " · " + item.type : ""}`;
+          diagSelect.appendChild(opt);
+        });
+        diagSelect.value = prevValue;
+      }
       renderTopology(mergedDevices);
       mergedDevices.forEach(item => {
         const row = document.createElement("div");
@@ -590,6 +636,24 @@ def _build_html() -> str:
       if (!inv.children.length) inv.innerHTML = '<div class="small">No discovery inventory.</div>';
     }
     async function action(kind){ await fetch('/api/action/' + kind, {method:'POST'}); setTimeout(load, 500); }
+    async function runDiagnostic(kind){
+      const target = document.getElementById("diagTarget").value.trim();
+      const statusEl = document.getElementById("diagStatus");
+      const outEl = document.getElementById("diagOutput");
+      if (!target) { statusEl.textContent = "Enter an IP address or hostname first."; return; }
+      const labels = {ping:"Pinging", tracert:"Tracing route to", dns:"Resolving", ports:"Checking ports on"};
+      statusEl.textContent = `${labels[kind] || "Testing"} ${target}...`;
+      outEl.textContent = "Running...";
+      try {
+        const res = await fetch('/api/diagnose', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type: kind, target})});
+        const result = await res.json();
+        outEl.textContent = result.output || "No output.";
+        statusEl.textContent = result.ok === false ? `Failed: ${result.error || "unknown error"}` : (result.success ? `${target}: success` : `${target}: no response`);
+      } catch (e) {
+        outEl.textContent = String(e);
+        statusEl.textContent = "Diagnostic request failed.";
+      }
+    }
     function askAssistant(raw){
       const q = String(raw || "").toLowerCase().trim();
       const box = document.getElementById("assistantAnswer");
@@ -814,6 +878,16 @@ class AgentUI:
                     parent.agent.request_heartbeat_once(); _json_response(self, {"ok": True}); return
                 if parsed.path == "/api/action/poll":
                     parent.agent.request_local_poll_once(); _json_response(self, {"ok": True}); return
+                if parsed.path == "/api/diagnose":
+                    target = str(data.get("target") or "").strip()
+                    kind = str(data.get("type") or "ping").strip().lower()
+                    if not target:
+                        _json_response(self, {"ok": False, "error": "target is required"}, 400); return
+                    try:
+                        result = parent.agent.poller.diagnose(kind, target)
+                        _json_response(self, {"ok": True, "type": kind, **result}); return
+                    except Exception as exc:
+                        _json_response(self, {"ok": False, "error": str(exc)}); return
                 if parsed.path == "/api/settings":
                     parent.settings.server_url = data.get("server_url") or parent.settings.server_url
                     parent.settings.company_id = int(data.get("company_id") or parent.settings.company_id)
