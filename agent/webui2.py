@@ -53,6 +53,7 @@ def _build_html() -> str:
       --bg:#050816; --panel:#0b1322; --line:rgba(255,255,255,.06); --text:#edf3ff; --muted:#8f9ebd;
       --blue:#6572ff; --purple:#8b5cf6; --good:#2de39c; --warn:#ffb84d; --bad:#ff6b7b;
       --shadow:0 20px 60px rgba(0,0,0,.32); --radius:18px;
+      --cyan:#22d3ee; --pink:#ec4899; --orange:#f59e0b; --teal:#14b8a6;
     }
     *{box-sizing:border-box}
     html,body{height:100%}
@@ -64,18 +65,18 @@ def _build_html() -> str:
         linear-gradient(180deg, #050812 0%, #070c18 100%);
       overflow:auto;
     }
-    .shell{min-height:100vh;display:grid;grid-template-columns:300px 1fr}
-    .side{display:flex;flex-direction:column;padding:22px 16px 16px;background:linear-gradient(180deg, rgba(7,11,22,.96), rgba(10,16,31,.98));border-right:1px solid rgba(255,255,255,.05)}
+    .shell{min-height:100vh;display:grid;grid-template-columns:236px 1fr}
+    .side{display:flex;flex-direction:column;padding:20px 14px 14px;background:linear-gradient(180deg, rgba(7,11,22,.96), rgba(10,16,31,.98));border-right:1px solid rgba(255,255,255,.05)}
     .brand{display:flex;align-items:center;gap:14px;padding:4px 8px 22px}
     .logo{width:48px;height:48px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(135deg,#7b62ff,#4660ff 58%,#1fd5ff);box-shadow:0 12px 30px rgba(76,95,255,.35);font-weight:900;font-size:18px}
     .brand h1{margin:0;font-size:19px;line-height:1.05;font-weight:800}
     .brand p{margin:4px 0 0;color:var(--muted);font-size:12px;letter-spacing:.01em}
     .nav{display:grid;gap:8px}
-    .nav button{all:unset;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px;border-radius:15px;color:var(--muted);font-size:14px;border:1px solid transparent}
-    .nav button::before{content:"";width:20px;height:20px;border-radius:7px;background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+    .nav button{all:unset;cursor:pointer;display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:15px;color:var(--muted);font-size:14px;border:1px solid transparent}
+    .nav button .navico{width:22px;height:22px;flex:0 0 auto;display:grid;place-items:center;font-size:15px;opacity:.9}
+    .nav button .navlabel{flex:1}
     .nav button.active{background:linear-gradient(135deg, rgba(103,115,255,.97), rgba(136,94,246,.92));color:#fff;box-shadow:0 16px 30px rgba(70,81,210,.32)}
-    .nav button.active::before{background:rgba(255,255,255,.18)}
-    .badge{min-width:24px;height:24px;border-radius:999px;display:grid;place-items:center;padding:0 8px;background:#6f52ff;color:#fff;font-size:11px}
+    .badge{min-width:24px;height:24px;border-radius:999px;display:grid;place-items:center;padding:0 8px;background:#6f52ff;color:#fff;font-size:11px;margin-left:auto}
     .sidepanel{margin-top:auto;padding-top:18px;display:grid;gap:14px}
     .profile{display:flex;align-items:center;gap:14px;padding:14px 12px;border-top:1px solid rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.06)}
     .avatar{width:60px;height:60px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 30% 30%, #74d8ff, #7b64ff 62%, #101826 100%);box-shadow:0 14px 32px rgba(106,83,255,.28);font-size:22px}
@@ -103,14 +104,20 @@ def _build_html() -> str:
     .btn.secondary{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);box-shadow:none;color:var(--text)}
     .chip{padding:10px 14px;border-radius:999px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);color:#dce4ff;font-size:13px;line-height:1.1}
     .chip strong{display:block;color:#aab6d8;font-size:12px;font-weight:500;margin-bottom:4px}
-    .grid6{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.85fr);gap:14px;margin:18px 0 16px}
+    .grid6{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:14px;margin:18px 0 16px}
     .metric{position:relative;min-height:112px;padding:19px;border-radius:18px;background:linear-gradient(180deg, rgba(13,20,38,.96), rgba(10,16,31,.97));border:1px solid rgba(255,255,255,.06);box-shadow:var(--shadow);overflow:hidden}
     .metric.wide{min-height:132px}
     .metric-head{display:flex;align-items:center;gap:12px}
     .metric-ico{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.06);color:#8ba2ff;flex:0 0 auto;font-size:18px}
+    .metric-ico.i-green{background:rgba(45,227,156,.14);color:var(--good);border-color:rgba(45,227,156,.25)}
+    .metric-ico.i-blue{background:rgba(101,114,255,.16);color:#8fa0ff;border-color:rgba(101,114,255,.28)}
+    .metric-ico.i-purple{background:rgba(139,92,246,.16);color:#c2a8ff;border-color:rgba(139,92,246,.28)}
+    .metric-ico.i-orange{background:rgba(245,158,11,.16);color:var(--warn);border-color:rgba(245,158,11,.28)}
+    .metric-ico.i-pink{background:rgba(236,72,153,.16);color:var(--pink);border-color:rgba(236,72,153,.28)}
     .metric-title{color:#a4b0cf;font-size:12px;letter-spacing:.02em}
     .metric-value{font-size:27px;line-height:1.1;font-weight:800;margin-top:10px;letter-spacing:-.03em}
     .metric-sub{color:#7cdcae;font-size:12px;margin-top:5px}
+    .metric-sub.muted{color:var(--muted)}
     .layout{display:grid;grid-template-columns:minmax(0,1.42fr) minmax(330px,.93fr);gap:16px;margin-top:10px;align-items:start}
     .stack{display:grid;gap:14px}
     .card{background:linear-gradient(180deg, rgba(13,20,38,.96), rgba(10,16,31,.98));border:1px solid rgba(255,255,255,.06);border-radius:18px;padding:19px;box-shadow:var(--shadow)}
@@ -125,13 +132,14 @@ def _build_html() -> str:
     .subcard .metric-title{font-size:12px}
     .subcard .metric-value{font-size:26px}
     .subcard .metric-sub{color:#7fe0b0}
-    .topology{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:stretch;min-height:310px;position:relative;padding:10px 0 4px}
-    .topology-card{min-height:100px;border-radius:16px;border:1px solid rgba(255,255,255,.05);background:rgba(255,255,255,.03);display:flex;align-items:flex-start;justify-content:center;flex-direction:column;padding:16px}
-    .topology-card .metric-value{font-size:18px;margin-top:8px}
-    .topology-center{grid-column:2 / span 2;grid-row:1 / span 2;display:grid;place-items:center;min-height:248px;position:relative;border-radius:22px;border:1px solid rgba(255,255,255,.05);background:radial-gradient(circle at center, rgba(68,255,174,.12), transparent 36%), rgba(255,255,255,.02);overflow:hidden}
-    .topology-node{width:92px;height:92px;border-radius:50%;background:radial-gradient(circle at 35% 35%, #63ffb9, #1bbf7a 56%, #0d5b43 100%);box-shadow:0 0 0 14px rgba(52,228,168,.08), 0 26px 60px rgba(11,211,153,.18);display:grid;place-items:center;font-size:28px;border:1px solid rgba(255,255,255,.12)}
-    .topology-center::before,.topology-center::after{content:"";position:absolute;inset:18px;border-radius:50%;border:1px dashed rgba(175,191,255,.12)}
-    .topology-center::after{inset:44px;border-style:solid;border-color:transparent;box-shadow:0 0 0 1px rgba(175,191,255,.09), inset 0 0 0 1px rgba(175,191,255,.09)}
+    .topology-wrap{min-height:320px;border-radius:18px;border:1px solid rgba(255,255,255,.05);background:radial-gradient(circle at center, rgba(68,255,174,.06), transparent 45%), rgba(255,255,255,.02);padding:6px}
+    .topology-wrap svg{width:100%;height:320px;display:block}
+    .topo-link{stroke:rgba(120,235,190,.55);stroke-width:1.4;stroke-dasharray:4 4}
+    .topo-link.offline{stroke:rgba(255,107,123,.45)}
+    .topo-link.unknown{stroke:rgba(255,184,77,.4)}
+    .topo-hub{fill:url(#topoHubGrad);stroke:rgba(255,255,255,.14)}
+    .topo-node{stroke:rgba(255,255,255,.12);stroke-width:1}
+    .topo-label{fill:#c7d2f0;font-size:10px;font-family:Inter,Segoe UI,Roboto,Arial,sans-serif}
     .legend{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:10px}
     .legend span{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}
     .legend i{display:inline-block;width:8px;height:8px;border-radius:50%}
@@ -144,7 +152,12 @@ def _build_html() -> str:
     .assistant-input .send{width:54px;height:48px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg, #5b63ff, #8c59f5);font-size:18px}
     .quick-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
     .quick{border-radius:14px;border:1px solid rgba(255,255,255,.05);background:rgba(255,255,255,.03);padding:16px 12px 14px;min-height:112px}
+    .quick{cursor:pointer;transition:border-color .15s ease}
+    .quick:hover{border-color:rgba(255,255,255,.16)}
     .quick .ico{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;margin-bottom:12px;background:rgba(102,114,255,.12);color:#90a2ff;border:1px solid rgba(118,129,255,.18);font-size:16px}
+    .quick .ico.q-pink{background:rgba(236,72,153,.14);color:var(--pink);border-color:rgba(236,72,153,.24)}
+    .quick .ico.q-purple{background:rgba(139,92,246,.14);color:#c2a8ff;border-color:rgba(139,92,246,.24)}
+    .quick .ico.q-cyan{background:rgba(34,211,238,.14);color:var(--cyan);border-color:rgba(34,211,238,.24)}
     .quick h4{margin:0;font-size:14px}
     .quick p{margin:8px 0 0;color:var(--muted);font-size:12px;line-height:1.45}
     .list{display:grid;gap:10px}
@@ -166,9 +179,9 @@ def _build_html() -> str:
     pre{white-space:pre-wrap;word-break:break-word;margin:0;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.5;color:#dbe7ff}
     .status-good{color:var(--good)} .status-warn{color:var(--warn)} .status-bad{color:var(--bad)}
     .main::-webkit-scrollbar{width:10px}.main::-webkit-scrollbar-thumb{background:rgba(140,154,214,.18);border-radius:20px;border:2px solid transparent;background-clip:content-box}
-    @media (max-width: 1360px){.grid6{grid-template-columns:1fr}.layout{grid-template-columns:1fr}.quick-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
-    @media (max-width: 980px){body{overflow:auto}.shell{grid-template-columns:1fr}.side{border-right:none;border-bottom:1px solid rgba(255,255,255,.06)}.grid6,.subgrid4,.quick-grid{grid-template-columns:1fr}.topbar{flex-direction:column}.top-actions{width:100%;justify-content:flex-start}.searchbar{max-width:none;width:100%}}
-    @media (max-width: 760px){.grid6,.subgrid4,.quick-grid,.two{grid-template-columns:1fr}.row{grid-template-columns:1fr}.main{padding:16px}.side{padding:16px}.topology{grid-template-columns:1fr}.topology-center{grid-column:auto;grid-row:auto;min-height:220px}}
+    @media (max-width: 1360px){.grid6{grid-template-columns:repeat(3,minmax(0,1fr))}.layout{grid-template-columns:1fr}.quick-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+    @media (max-width: 980px){body{overflow:auto}.shell{grid-template-columns:1fr}.side{border-right:none;border-bottom:1px solid rgba(255,255,255,.06)}.grid6{grid-template-columns:repeat(2,minmax(0,1fr))}.subgrid4,.quick-grid{grid-template-columns:1fr}.topbar{flex-direction:column}.top-actions{width:100%;justify-content:flex-start}.searchbar{max-width:none;width:100%}}
+    @media (max-width: 760px){.grid6,.subgrid4,.quick-grid,.two{grid-template-columns:1fr}.row{grid-template-columns:1fr}.main{padding:16px}.side{padding:16px}.topology-wrap svg{height:260px}}
   </style>
 </head>
 <body>
@@ -188,15 +201,19 @@ def _build_html() -> str:
       <div class="topbar">
         <div class="hero"><h2 id="pageTitle">Good evening, Sagar 👋</h2><p id="pageSubtitle">Your network is healthy and all systems are operational.</p></div>
         <div class="top-actions">
-          <div class="searchbar"><span>⌕</span><input id="globalSearch" placeholder="Search devices, IPs, logs, alerts..."/><span class="small">⌘ K</span></div>
+          <div class="searchbar"><span>⌕</span><input id="globalSearch" placeholder="Search devices, IPs, logs, alerts..." onkeydown="if(event.key==='Enter') runGlobalSearch(this.value)"/><span class="small">⌘ K</span></div>
           <div class="agent-pill"><span class="small">Server Sync</span><div class="online">● Online</div></div>
           <button class="btn" onclick="action('sync')">Sync Now</button>
           <div class="iconbtn">🔔<span class="iconbadge" id="bellBadge" style="display:none">0</span></div>
         </div>
       </div>
       <div class="grid6">
-        <div class="metric wide"><div class="metric-head"><div class="metric-ico">🟢</div><div><div class="metric-title">Agent Status</div><div class="metric-value" id="mConnection">Online</div></div></div><div class="metric-sub" id="mSyncSub">Last sync 2m ago · Auto sync enabled</div></div>
-        <div class="metric"><div class="metric-head"><div class="metric-ico">🔔</div><div><div class="metric-title">Alerts</div><div class="metric-value" id="mAlerts">0</div></div></div><div class="metric-sub">Critical alerts only</div></div>
+        <div class="metric"><div class="metric-head"><div class="metric-ico i-green">📶</div><div><div class="metric-title">Connection</div><div class="metric-value" id="mConnection">Online</div></div></div><div class="metric-sub muted" id="mConnectionSub">All systems operational</div></div>
+        <div class="metric"><div class="metric-head"><div class="metric-ico i-blue">⟳</div><div><div class="metric-title">Last Sync</div><div class="metric-value" id="mLastSync">—</div></div></div><div class="metric-sub muted" id="mSyncSub">Auto sync enabled</div></div>
+        <div class="metric"><div class="metric-head"><div class="metric-ico i-purple">▤</div><div><div class="metric-title">Queue</div><div class="metric-value" id="mQueue">0</div></div></div><div class="metric-sub muted">Commands queued</div></div>
+        <div class="metric"><div class="metric-head"><div class="metric-ico i-orange">🧠</div><div><div class="metric-title">Model</div><div class="metric-value" id="mModel">v1</div></div></div><div class="metric-sub muted">AI Model Active</div></div>
+        <div class="metric"><div class="metric-head"><div class="metric-ico i-green">🛡</div><div><div class="metric-title">Alerts</div><div class="metric-value" id="mAlerts">0</div></div></div><div class="metric-sub muted" id="mAlertsSub">No critical alerts</div></div>
+        <div class="metric"><div class="metric-head"><div class="metric-ico i-purple">🎯</div><div><div class="metric-title">Targets</div><div class="metric-value" id="mTargets">0</div></div></div><div class="metric-sub muted">Hosts monitored</div></div>
       </div>
       <section class="tabs active" id="tab-dashboard">
         <div class="layout">
@@ -205,30 +222,25 @@ def _build_html() -> str:
               <div class="section-title"><div><h3>Network Overview</h3><span>Real-time network performance and statistics</span></div><div class="subtle-row"><div class="seg">1H</div><div class="seg">6H</div><div class="seg active">12H</div><div class="seg">1D</div><div class="seg">7D</div><div class="seg">30D</div></div></div>
               <div class="subgrid4">
                 <div class="subcard"><div class="metric-title">Devices</div><div class="metric-value" id="mDevices">0</div><div class="metric-sub" id="mDevicesSub">Online: 0</div></div>
-                <div class="subcard"><div class="metric-title">Bandwidth</div><div class="metric-value">1.2 Gbps</div><div class="metric-sub">↑ 12%</div></div>
-                <div class="subcard"><div class="metric-title">Latency</div><div class="metric-value">18 ms</div><div class="metric-sub">↓ 8%</div></div>
-                <div class="subcard"><div class="metric-title">Uptime</div><div class="metric-value">99.9%</div><div class="metric-sub">Excellent</div></div>
+                <div class="subcard"><div class="metric-title">Avg Latency</div><div class="metric-value" id="mLatency">—</div><div class="metric-sub" id="mLatencySub">From live probes</div></div>
+                <div class="subcard"><div class="metric-title">Reachability</div><div class="metric-value" id="mReachability">—</div><div class="metric-sub" id="mReachabilitySub">Reachable hosts</div></div>
+                <div class="subcard"><div class="metric-title">Agent Uptime</div><div class="metric-value" id="mUptime">—</div><div class="metric-sub" id="mUptimeSub">Since process start</div></div>
               </div>
             </div>
             <div class="card">
-              <div class="section-title"><div><h3>Network Topology</h3><span>Interactive network map</span></div><div class="subtle-row"><div class="seg active">Auto Layout</div><div class="seg">⤢</div></div></div>
-              <div class="topology">
-                <div class="topology-card"><div class="metric-title">Online</div><div class="metric-value">14</div><div class="small">Stable devices</div></div>
-                <div class="topology-card"><div class="metric-title">Router</div><div class="metric-value">3</div><div class="small">Core layer</div></div>
-                <div class="topology-card"><div class="metric-title">Switches</div><div class="metric-value">8</div><div class="small">Distribution layer</div></div>
-                <div class="topology-card"><div class="metric-title">Access</div><div class="metric-value">11</div><div class="small">Edge layer</div></div>
-                <div class="topology-center"><div class="topology-node">⌂</div></div>
-              </div>
+              <div class="section-title"><div><h3>Network Topology</h3><span>Interactive network map</span></div><div class="subtle-row"><div class="seg active">Live</div></div></div>
+              <div class="topology-wrap"><svg id="topologySvg" viewBox="0 0 760 320" preserveAspectRatio="xMidYMid meet"></svg></div>
+              <div class="legend"><span><i style="background:var(--good)"></i>Online</span><span><i style="background:var(--warn)"></i>Saved / unknown</span><span><i style="background:var(--bad)"></i>Offline</span></div>
             </div>
             <div class="card">
               <div class="section-title"><div><h3>Quick Actions</h3><span>Common network tasks</span></div></div>
               <div class="quick-grid">
-                <div class="quick"><div class="ico">⌘</div><h4>Run Command</h4><p>Execute commands on devices</p></div>
-                <div class="quick"><div class="ico">⚙</div><h4>Bulk Config</h4><p>Update configuration on multiple devices</p></div>
-                <div class="quick"><div class="ico">❤</div><h4>Health Check</h4><p>Run network diagnostics</p></div>
-                <div class="quick"><div class="ico">⬇</div><h4>Backup Config</h4><p>Backup device configurations</p></div>
-                <div class="quick"><div class="ico">◌</div><h4>Network Scan</h4><p>Discover new network devices</p></div>
-                <div class="quick"><div class="ico">▦</div><h4>View Reports</h4><p>Generate network reports</p></div>
+                <div class="quick" onclick="setTab('commands')"><div class="ico">⌘</div><h4>Run Command</h4><p>Execute commands on devices</p></div>
+                <div class="quick" onclick="setTab('devices')"><div class="ico q-purple">⚙</div><h4>Bulk Config</h4><p>Update configuration on multiple devices</p></div>
+                <div class="quick" onclick="action('heartbeat')"><div class="ico q-pink">❤</div><h4>Health Check</h4><p>Run network diagnostics</p></div>
+                <div class="quick" onclick="setTab('settings')"><div class="ico">⬇</div><h4>Backup Config</h4><p>View device configuration snapshot</p></div>
+                <div class="quick" onclick="action('poll')"><div class="ico q-cyan">◌</div><h4>Network Scan</h4><p>Discover new network devices</p></div>
+                <div class="quick" onclick="setTab('reports')"><div class="ico q-purple">▦</div><h4>View Reports</h4><p>Generate network reports</p></div>
               </div>
             </div>
           </div>
@@ -240,8 +252,14 @@ def _build_html() -> str:
             <div class="card">
               <div class="section-title"><div><h3>AI Assistant</h3><span>Powered by advanced AI</span></div></div>
               <div class="assistant-box">
-                <div class="assistant-input"><input id="assistantInput" placeholder="Ask me anything about your network..."/><div class="send">➤</div></div>
-                <div class="flex"><button class="btn secondary">Show me offline devices</button><button class="btn secondary">Check bandwidth usage</button><button class="btn secondary">Run connectivity test</button><button class="btn secondary">View security status</button></div>
+                <div class="assistant-input"><input id="assistantInput" placeholder="Ask me anything about your network..." onkeydown="if(event.key==='Enter') askAssistant(this.value)"/><div class="send" onclick="askAssistant(document.getElementById('assistantInput').value)">➤</div></div>
+                <div class="flex">
+                  <button class="btn secondary" onclick="askAssistant('offline devices')">Show me offline devices</button>
+                  <button class="btn secondary" onclick="askAssistant('bandwidth usage')">Check bandwidth usage</button>
+                  <button class="btn secondary" onclick="askAssistant('connectivity test')">Run connectivity test</button>
+                  <button class="btn secondary" onclick="askAssistant('security status')">View security status</button>
+                </div>
+                <div class="pill" id="assistantAnswer" style="display:none;white-space:pre-wrap;line-height:1.5"></div>
               </div>
             </div>
             <div class="card"><div class="section-title"><div><h3>Recent Activity</h3><span>View all</span></div></div><div class="stack" id="historyList"></div></div>
@@ -291,14 +309,16 @@ def _build_html() -> str:
     </main>
   </div>
   <script>
-    const navItems = [["dashboard","Dashboard"],["devices","Devices"],["topology","Topology"],["alerts","Alerts"],["ai","AI Assistant"],["commands","Commands"],["automation","Automation"],["reports","Reports"],["settings","Settings"]];
+    const navItems = [["dashboard","Dashboard","▦"],["devices","Devices","🖥"],["topology","Topology","⎇"],["alerts","Alerts","🔔"],["ai","AI Assistant","✦"],["commands","Commands","⌘"],["automation","Automation","⚙"],["reports","Reports","▲"],["settings","Settings","⛭"]];
     const state = {tab:"dashboard",payload:{}};
+    let lastMergedDevices = [];
     const nav = document.getElementById("nav");
-    navItems.forEach(([key,label]) => {
+    navItems.forEach(([key,label,icon]) => {
       const b = document.createElement("button");
-      const t = document.createElement("span"); t.textContent = label;
+      const i = document.createElement("span"); i.className = "navico"; i.textContent = icon;
+      const t = document.createElement("span"); t.className = "navlabel"; t.textContent = label;
       const s = document.createElement("span"); s.className = "badge"; s.style.display = "none"; s.textContent = ""; s.id = "badge-" + key;
-      b.appendChild(t); b.appendChild(s); b.onclick = () => setTab(key); b.id = "nav-" + key; nav.appendChild(b);
+      b.appendChild(i); b.appendChild(t); b.appendChild(s); b.onclick = () => setTab(key); b.id = "nav-" + key; nav.appendChild(b);
     });
     function setTab(tab){
       state.tab = tab;
@@ -320,13 +340,53 @@ def _build_html() -> str:
       document.getElementById("pageTitle").textContent = titles[tab][0];
       document.getElementById("pageSubtitle").textContent = titles[tab][1];
     }
+    function fmtDuration(seconds){
+      if (seconds == null || isNaN(seconds)) return "—";
+      const s = Math.floor(seconds);
+      const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+      if (d > 0) return `${d}d ${h}h`;
+      if (h > 0) return `${h}h ${m}m`;
+      return `${m}m ${s % 60}s`;
+    }
+    function renderTopology(devices){
+      const svg = document.getElementById("topologySvg");
+      if (!svg) return;
+      const W = 760, H = 320, cx = W / 2, cy = H / 2;
+      const shown = devices.slice(0, 10);
+      const n = shown.length;
+      const parts = [`<defs><radialGradient id="topoHubGrad" cx="35%" cy="35%" r="65%"><stop offset="0%" stop-color="#63ffb9"/><stop offset="56%" stop-color="#1bbf7a"/><stop offset="100%" stop-color="#0d5b43"/></radialGradient></defs>`];
+      if (!n) {
+        parts.push(`<circle class="topo-hub" cx="${cx}" cy="${cy}" r="46"/><text class="topo-label" x="${cx}" y="${cy+5}" text-anchor="middle" font-size="12">Agent</text>`);
+        parts.push(`<text class="topo-label" x="${cx}" y="${cy+30}" text-anchor="middle">No targets yet — add a device to populate the map</text>`);
+        svg.innerHTML = parts.join("");
+        return;
+      }
+      const radius = Math.min(W, H * 2) * 0.34;
+      const nodePts = shown.map((item, i) => {
+        const angle = (i / n) * Math.PI * 2 - Math.PI / 2;
+        return { item, x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) * 0.82 };
+      });
+      nodePts.forEach(p => {
+        const cls = p.item.reachable === false ? "offline" : (p.item.source === "live" ? "" : "unknown");
+        parts.push(`<line class="topo-link ${cls}" x1="${cx}" y1="${cy}" x2="${p.x}" y2="${p.y}"/>`);
+      });
+      parts.push(`<circle class="topo-hub" cx="${cx}" cy="${cy}" r="40"/><text class="topo-label" x="${cx}" y="${cy+4}" text-anchor="middle" font-size="12" font-weight="700" fill="#04231a">Agent</text>`);
+      nodePts.forEach(p => {
+        const color = p.item.reachable === false ? "#ff6b7b" : (p.item.source === "live" ? "#2de39c" : "#ffb84d");
+        const label = String(p.item.host || "").slice(0, 16);
+        parts.push(`<circle class="topo-node" cx="${p.x}" cy="${p.y}" r="16" fill="${color}" fill-opacity="0.85"/>`);
+        const ty = p.y > cy ? p.y + 26 : p.y - 20;
+        parts.push(`<text class="topo-label" x="${p.x}" y="${ty}" text-anchor="middle">${label}</text>`);
+      });
+      svg.innerHTML = parts.join("");
+    }
     async function load(){
       const res = await fetch('/api/state');
       state.payload = await res.json();
       const d = state.payload;
       try {
         const remote = await fetch('/api/agent/devices').then(r => r.ok ? r.json() : null);
-        if (remote && Array.isArray(remote.devices)) {
+        if (remote && Array.isArray(remote.devices) && remote.devices.length) {
           d.inventory = remote.devices.map(item => ({
             host: item.mgmt_ip || item.host,
             latency_ms: item.latency_ms ?? item.ping_ms ?? null,
@@ -355,8 +415,18 @@ def _build_html() -> str:
       } catch (e) {}
       const syncLabel = d.last_sync_at ? new Date(d.last_sync_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : "—";
       document.getElementById("mConnection").textContent = d.online ? "Online" : "Offline";
-      document.getElementById("mSyncSub").textContent = `Last sync ${syncLabel} · Auto sync enabled`;
-      document.getElementById("mAlerts").textContent = String((d.alerts || []).filter(i => (i.severity || '').toLowerCase() === 'critical' || String(i.event_type || '').startsWith('alert.')).length);
+      document.getElementById("mConnectionSub").textContent = d.online ? "All systems operational" : (d.last_error || "Connection issue detected");
+      document.getElementById("mLastSync").textContent = syncLabel;
+      document.getElementById("mSyncSub").textContent = "Auto sync enabled";
+      document.getElementById("mQueue").textContent = String(d.queue_depth ?? 0);
+      document.getElementById("mModel").textContent = "v" + String(d.model_version || "1");
+      const criticalAlertCount = (d.alerts || []).filter(i => (i.severity || '').toLowerCase() === 'critical' || String(i.event_type || '').startsWith('alert.')).length;
+      document.getElementById("mAlerts").textContent = String(criticalAlertCount);
+      document.getElementById("mAlertsSub").textContent = criticalAlertCount ? `${criticalAlertCount} critical` : "No critical alerts";
+      document.getElementById("mTargets").textContent = String((d.local_targets || []).length || (d.inventory || []).length || 0);
+      document.getElementById("mLatency").textContent = d.avg_latency_ms != null ? `${d.avg_latency_ms} ms` : "—";
+      document.getElementById("mReachability").textContent = d.reachability_pct != null ? `${d.reachability_pct}%` : "—";
+      document.getElementById("mUptime").textContent = fmtDuration(d.agent_uptime_seconds);
       document.getElementById("profileName").textContent = d.agent_name || "Sagar";
       document.getElementById("profileState").textContent = d.online ? "Online" : "Offline";
       document.getElementById("scanStatus").textContent = d.local_scan_status || "Idle";
@@ -412,6 +482,8 @@ def _build_html() -> str:
       const mDevicesSubEl = document.getElementById("mDevicesSub");
       if (mDevicesEl) mDevicesEl.textContent = String(totalDeviceCount);
       if (mDevicesSubEl) mDevicesSubEl.textContent = `Online: ${onlineDeviceCount}`;
+      lastMergedDevices = mergedDevices;
+      renderTopology(mergedDevices);
       mergedDevices.forEach(item => {
         const row = document.createElement("div");
         row.className = "row";
@@ -518,6 +590,51 @@ def _build_html() -> str:
       if (!inv.children.length) inv.innerHTML = '<div class="small">No discovery inventory.</div>';
     }
     async function action(kind){ await fetch('/api/action/' + kind, {method:'POST'}); setTimeout(load, 500); }
+    function askAssistant(raw){
+      const q = String(raw || "").toLowerCase().trim();
+      const box = document.getElementById("assistantAnswer");
+      if (!box) return;
+      const d = state.payload || {};
+      const inv = lastMergedDevices.length ? lastMergedDevices : (d.inventory || []);
+      const targets = d.local_targets || [];
+      const offline = inv.filter(i => i.reachable === false);
+      let answer = "";
+      if (!q) { box.style.display = "none"; return; }
+      if (q.includes("offline")) {
+        answer = offline.length
+          ? `${offline.length} offline device(s): ${offline.map(i => i.host).join(", ")}`
+          : "No devices are currently reporting offline.";
+      } else if (q.includes("bandwidth")) {
+        answer = "This agent doesn't collect an aggregate bandwidth counter yet — real signals available: " +
+          `avg latency ${d.avg_latency_ms != null ? d.avg_latency_ms + " ms" : "n/a"}, ` +
+          `reachability ${d.reachability_pct != null ? d.reachability_pct + "%" : "n/a"} across ${inv.length} probed host(s).`;
+      } else if (q.includes("connectivity") || q.includes("test")) {
+        answer = "Running a fresh poll of all targets now — results will update in a few seconds.";
+        fetch('/api/action/poll', {method:'POST'}).then(() => setTimeout(load, 1500));
+      } else if (q.includes("security") || q.includes("alert")) {
+        const alerts = d.alerts || [];
+        answer = alerts.length
+          ? `${alerts.length} open alert(s). Most recent: ${alerts[0].event_type || 'alert'} on ${alerts[0].host || 'unknown host'} (${alerts[0].severity || 'info'}).`
+          : "No open alerts. Network looks healthy.";
+      } else if (q.includes("device")) {
+        answer = `Tracking ${targets.length} saved target(s) and ${inv.length} live inventory record(s).`;
+      } else {
+        answer = `I can report on live agent data: devices (${targets.length}), alerts (${(d.alerts||[]).length}), queue depth (${d.queue_depth ?? 0}), reachability (${d.reachability_pct ?? '—'}%). Try asking about "offline devices" or "alerts".`;
+      }
+      box.style.display = "block";
+      box.textContent = answer;
+      document.getElementById("assistantInput").value = "";
+    }
+    function runGlobalSearch(term){
+      const q = String(term || "").toLowerCase().trim();
+      if (!q) return;
+      setTab("devices");
+      setTimeout(() => {
+        document.querySelectorAll("#deviceList .row").forEach(row => {
+          row.style.display = row.textContent.toLowerCase().includes(q) ? "" : "none";
+        });
+      }, 50);
+    }
     async function addTarget(){
       const host = document.getElementById("targetInput").value.trim();
       if (!host) return;
@@ -596,6 +713,7 @@ class AgentUI:
         self.httpd: ThreadingHTTPServer | None = None
         self.server_thread: threading.Thread | None = None
         self.port = 8765
+        self._started_at = time.time()
 
     def _snapshot(self) -> dict[str, Any]:
         return self.agent.build_snapshot()
@@ -613,6 +731,9 @@ class AgentUI:
         if latencies:
             avg_latency = round(sum(latencies) / len(latencies), 1)
         critical_alerts = sum(1 for item in (self.agent.last_local_alerts or []) if str(item.get("severity") or "").lower() == "critical")
+        total_probed = reachable + unreachable
+        reachability_pct = round((reachable / total_probed) * 100, 1) if total_probed else None
+        agent_uptime_seconds = round(time.time() - self._started_at, 1)
         return {
             "online": bool(self.agent.last_online_state),
             "server_url": self.settings.server_url,
@@ -634,6 +755,8 @@ class AgentUI:
             "active_alerts": list(self.agent.active_local_alerts or []),
             "critical_alerts": critical_alerts,
             "avg_latency_ms": avg_latency,
+            "reachability_pct": reachability_pct,
+            "agent_uptime_seconds": agent_uptime_seconds,
             "last_inventory_count": len(inventory),
             "agents": [
                 {"name": "Monitoring Agent", "status": "online", "note": f"{target_count} targets, {reachable} reachable", "load": max(10, min(100, 82 - unreachable * 10)), "context": "signal tracking"},
