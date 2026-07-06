@@ -102,6 +102,8 @@ def _build_html() -> str:
     .iconbadge{position:absolute;top:-2px;right:-2px;width:18px;height:18px;border-radius:999px;background:#7a5dff;color:#fff;font-size:11px;display:grid;place-items:center;border:2px solid #070c18}
     .btn{all:unset;cursor:pointer;padding:12px 18px;border-radius:14px;color:#fff;font-weight:700;background:linear-gradient(135deg, #5362ff, #8c5af5);box-shadow:0 14px 28px rgba(98,95,255,.24);text-align:center;white-space:nowrap}
     .btn.secondary{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);box-shadow:none;color:var(--text)}
+    .btn.danger{background:rgba(255,80,80,.12);border:1px solid rgba(255,80,80,.35);box-shadow:none;color:#ff8a8a}
+    .btn.danger:hover{background:rgba(255,80,80,.2)}
     .chip{padding:10px 14px;border-radius:999px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);color:#dce4ff;font-size:13px;line-height:1.1}
     .chip strong{display:block;color:#aab6d8;font-size:12px;font-weight:500;margin-bottom:4px}
     .grid6{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:14px;margin:18px 0 16px}
@@ -293,25 +295,10 @@ def _build_html() -> str:
       </section>
       <section class="tabs" id="tab-devices">
         <div class="card">
-          <div class="section-title"><div><h3>Devices</h3><span>Local targets managed by this agent and synced to server</span></div></div>
-          <div class="two" style="margin-bottom:12px">
-            <input class="input" id="targetInput" placeholder="Add target IP or hostname"/>
-            <select class="input" id="vendorInput">
-              <option value="">Vendor (auto)</option>
-              <option>MicroTik</option><option>Cisco</option><option>Syrotech</option><option>TP-Link</option><option>HPE</option><option>Grandstream</option><option>DBC</option><option>Genexis</option>
-            </select>
-            <input class="input" id="modelInput" placeholder="Model (optional)"/>
-            <select class="input" id="protocolInput">
-              <option value="auto">Protocol (auto)</option>
-              <option value="snmp">SNMP</option><option value="ssh">SSH</option><option value="rest">REST</option><option value="netconf">NETCONF</option>
-            </select>
-            <input class="input" id="usernameInput" placeholder="Username (optional)"/>
-            <input class="input" id="passwordInput" placeholder="Password (optional)" type="password"/>
+          <div class="section-title">
+            <div><h3>Devices</h3><span>Local targets managed by this agent and synced to server</span></div>
+            <button class="btn" onclick="openAddDeviceModal()">+ Add Device</button>
           </div>
-          <div class="flex" style="margin-bottom:12px"><button class="btn" onclick="addTarget()">Add Device</button><button class="btn secondary" onclick="removeTarget()">Remove Device</button></div>
-          <div class="pill" id="deviceAddStatus" style="margin-bottom:12px">Ready to add a device.</div>
-          <div class="legend" style="margin-bottom:12px"><span><i style="background:var(--good)"></i>Online</span><span><i style="background:var(--warn)"></i>Checking / not probed yet</span><span><i style="background:var(--bad)"></i>Offline</span></div>
-          <div class="small" style="margin-bottom:10px">Click any device below to see its live status and interfaces.</div>
           <div class="list" id="deviceList"></div>
         </div>
       </section>
@@ -369,6 +356,44 @@ def _build_html() -> str:
       <div class="modal-actions">
         <button class="btn" onclick="refreshDeviceModal()">Refresh now</button>
         <button class="btn secondary" onclick="closeDeviceModal()">Close</button>
+        <button class="btn danger" onclick="removeCurrentDevice()">Remove device</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="addDeviceModal" onclick="if(event.target===this) closeAddDeviceModal()">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <h3>Add Device</h3>
+          <p>Add a MikroTik router, OLT, or any SNMP/SSH manageable device</p>
+        </div>
+        <button class="modal-close" onclick="closeAddDeviceModal()">✕</button>
+      </div>
+      <div class="stack">
+        <input class="input" id="targetInput" placeholder="Target IP or hostname"/>
+        <div class="two">
+          <select class="input" id="vendorInput">
+            <option value="">Vendor (auto)</option>
+            <option>MicroTik</option><option>Cisco</option><option>Syrotech</option><option>TP-Link</option><option>HPE</option><option>Grandstream</option><option>DBC</option><option>Genexis</option>
+          </select>
+          <input class="input" id="modelInput" placeholder="Model (optional)"/>
+        </div>
+        <div class="two">
+          <select class="input" id="protocolInput">
+            <option value="auto">Protocol (auto)</option>
+            <option value="snmp">SNMP</option><option value="ssh">SSH</option><option value="rest">REST</option><option value="netconf">NETCONF</option>
+          </select>
+          <input class="input" id="snmpCommunityInput" placeholder="SNMP community (default: public)"/>
+        </div>
+        <div class="two">
+          <input class="input" id="usernameInput" placeholder="Username (optional, for SSH)"/>
+          <input class="input" id="passwordInput" placeholder="Password (optional, for SSH)" type="password"/>
+        </div>
+        <div class="pill" id="deviceAddStatus">Ready to add a device.</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="submitAddDevice()">Add Device</button>
+        <button class="btn secondary" onclick="closeAddDeviceModal()">Cancel</button>
       </div>
     </div>
   </div>
@@ -861,7 +886,22 @@ def _build_html() -> str:
       }
       setTimeout(load, 300);
     }
-    async function addTarget(){
+    function openAddDeviceModal(){
+      document.getElementById("targetInput").value = "";
+      document.getElementById("vendorInput").value = "";
+      document.getElementById("modelInput").value = "";
+      document.getElementById("protocolInput").value = "auto";
+      document.getElementById("snmpCommunityInput").value = "";
+      document.getElementById("usernameInput").value = "";
+      document.getElementById("passwordInput").value = "";
+      const statusBox = document.getElementById("deviceAddStatus");
+      if (statusBox) statusBox.textContent = "Ready to add a device.";
+      document.getElementById("addDeviceModal").classList.add("open");
+    }
+    function closeAddDeviceModal(){
+      document.getElementById("addDeviceModal").classList.remove("open");
+    }
+    async function submitAddDevice(){
       const host = document.getElementById("targetInput").value.trim();
       if (!host) return;
       const statusBox = document.getElementById("deviceAddStatus");
@@ -878,35 +918,32 @@ def _build_html() -> str:
             model: document.getElementById("modelInput").value.trim() || 'Auto',
             device_type: 'switch',
             access_protocol: document.getElementById("protocolInput").value.trim() || 'auto',
+            snmp_community: document.getElementById("snmpCommunityInput").value.trim() || 'public',
             username: document.getElementById("usernameInput").value.trim() || null,
             password: document.getElementById("passwordInput").value.trim() || null
           })
         });
         const data = await r.json().catch(() => ({}));
         if (!r.ok || data.ok === false) throw new Error(data.error || `HTTP ${r.status}`);
-        if (data && data.probe && statusBox) {
-          const reach = data.probe.reachable ? "reachable" : "unreachable";
-          const proto = data.probe.protocol || "auto";
+        if (statusBox) {
+          const reach = data && data.probe && data.probe.reachable ? "reachable" : "added";
+          const proto = data && data.probe ? (data.probe.protocol || "auto") : "auto";
           statusBox.textContent = `${host} added ? ${reach} ? ${proto}`;
         }
-      } catch (e) {}
+      } catch (e) {
+        if (statusBox) statusBox.textContent = `Could not add ${host}: ${e.message || e}`;
+        return; // keep the popup open so the person can fix the input and retry
+      }
       try {
         await fetch('/api/targets', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({host})});
       } catch (e) {}
-      document.getElementById("targetInput").value = "";
-      document.getElementById("vendorInput").value = "";
-      document.getElementById("modelInput").value = "";
-      document.getElementById("protocolInput").value = "auto";
-      document.getElementById("usernameInput").value = "";
-      document.getElementById("passwordInput").value = "";
-      if (statusBox && statusBox.textContent === `Adding ${host}...`) statusBox.textContent = `Added ${host}. Refreshing list...`;
+      closeAddDeviceModal();
       setTimeout(load, 150);
     }
-    async function removeTarget(){
-      const host = document.getElementById("targetInput").value.trim();
+    async function removeCurrentDevice(){
+      const host = currentModalHost;
       if (!host) return;
-      const statusBox = document.getElementById("deviceAddStatus");
-      if (statusBox) statusBox.textContent = `Removing ${host}...`;
+      if (!window.confirm(`Remove ${host} from Devices?`)) return;
       try {
         const r = await fetch('/api/agent/device', {
           method:'DELETE',
@@ -919,8 +956,7 @@ def _build_html() -> str:
       try {
         await fetch('/api/targets', {method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({host})});
       } catch (e) {}
-      document.getElementById("targetInput").value = "";
-      if (statusBox) statusBox.textContent = `Removed ${host}. Refreshing list...`;
+      closeDeviceModal();
       setTimeout(load, 150);
     }
     async function saveSettings(){ const payload = {server_url: document.getElementById("serverUrl").value.trim(), company_id: parseInt(document.getElementById("companyId").value || "1", 10), name: document.getElementById("agentNameInput").value.trim(), discovery_cidr: document.getElementById("discoveryCidr").value.trim(), local_targets: document.getElementById("localTargets").value.split(",").map(s=>s.trim()).filter(Boolean), local_devices: (state.payload.local_devices || [])}; await fetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}); try { await fetch('/api/agent/workspace', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({local_targets: payload.local_targets, local_devices: payload.local_devices, settings:{discovery_cidr: payload.discovery_cidr}})}); } catch(e) {} setTimeout(load, 300); }

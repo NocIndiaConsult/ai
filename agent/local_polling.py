@@ -54,11 +54,11 @@ except Exception:  # pragma: no cover
         SNMP_MODE = None
 
 
-async def _snmp_get_async(host: str, community: str, oid: str, timeout: float, retries: int) -> list[tuple[str, str]] | None:
+async def _snmp_get_async(host: str, community: str, oid: str, timeout: float, retries: int, mp_model: int = 1) -> list[tuple[str, str]] | None:
     transport = await UdpTransportTarget.create((host, 161), timeout=timeout, retries=retries)
     error_indication, error_status, _error_index, var_binds = await get_cmd(
         SnmpEngine(),
-        CommunityData(community, mpModel=1),
+        CommunityData(community, mpModel=mp_model),
         transport,
         ContextData(),
         ObjectType(ObjectIdentity(oid)),
@@ -68,12 +68,12 @@ async def _snmp_get_async(host: str, community: str, oid: str, timeout: float, r
     return [(str(o), str(v)) for o, v in var_binds]
 
 
-async def _snmp_walk_async(host: str, community: str, oid: str, timeout: float, retries: int) -> list[tuple[str, str]]:
+async def _snmp_walk_async(host: str, community: str, oid: str, timeout: float, retries: int, mp_model: int = 1) -> list[tuple[str, str]]:
     rows: list[tuple[str, str]] = []
     transport = await UdpTransportTarget.create((host, 161), timeout=timeout, retries=retries)
     async for error_indication, error_status, _error_index, var_binds in walk_cmd(
         SnmpEngine(),
-        CommunityData(community, mpModel=1),
+        CommunityData(community, mpModel=mp_model),
         transport,
         ContextData(),
         ObjectType(ObjectIdentity(oid)),
@@ -444,6 +444,11 @@ class LocalNetworkPoller:
     def __init__(self, common_ports: Iterable[int] | None = None, max_discovery_hosts: int = 32) -> None:
         self.common_ports = [int(p) for p in (common_ports or [22, 23, 80, 443, 161, 8291, 8080])]
         self.max_discovery_hosts = max(1, int(max_discovery_hosts))
+        # Cache of host+community -> working SNMP mpModel (1=v2c, 0=v1).
+        # Many DBC/Syrotech (and other budget) OLTs only implement SNMPv1 and
+        # simply drop v2c GET/GETBULK requests with no response at all, which
+        # looks identical to "unreachable" unless we also try v1.
+        self._snmp_version_cache: dict[str, int] = {}
 
     def _norm(self, value: Any) -> str:
         return str(value or "").strip()
@@ -462,10 +467,17 @@ class LocalNetworkPoller:
                     return "ssh_cisco" if has_creds else "snmp"
                 if any(tag in vendor_model for tag in ("hpe", "aruba", "comware")):
                     return "ssh_hpe" if has_creds else "snmp"
-                # TP-Link, D-Link, Grandstream, DBC, Syrotech, Genexis and other
-                # OLT/switch vendors: standard SNMP (IF-MIB/BRIDGE-MIB) works
-                # broadly here without needing a vendor-specific CLI parser.
-                if any(tag in vendor_model for tag in ("snmp", "olt", "tp-link", "d-link", "dbc", "syrotech", "genexis", "grandstream")):
+                # DBC and Syrotech GPON/EPON OLTs are VSOL-based rebrands with
+                # their own quirks (SNMP daemon off by default, factory
+                # community strings of "public"/"private", Cisco-style CLI
+                # over SSH/telnet) - handled by a dedicated hybrid path below
+                # instead of the generic SNMP-only path other vendors use.
+                if any(tag in vendor_model for tag in ("dbc", "syrotech")):
+                    return "dbc_syrotech"
+                # TP-Link, D-Link, Grandstream, Genexis and other OLT/switch
+                # vendors: standard SNMP (IF-MIB/BRIDGE-MIB) works broadly
+                # here without needing a vendor-specific CLI parser.
+                if any(tag in vendor_model for tag in ("snmp", "olt", "tp-link", "d-link", "genexis", "grandstream")):
                     return "snmp"
                 if has_creds:
                     return "ssh"
@@ -695,6 +707,22 @@ class LocalNetworkPoller:
             )
         return {"host": host, "reachable": reachable or bool(output), "latency_ms": None, "ping_output": "ssh-snapshot", "device_type": "switch", "protocol": "ssh", "summary": {"ports": len(ports), "port_details": ports, "ports_down": len(down_ports), "ports_up": len(ports) - len(down_ports), "mac_table": mac_table, "note": "SSH snapshot collected."}, "alerts": alerts}
 
+    def _snmp_cache_key(self, host: str, community: str) -> str:
+        return f"{host}|{community}"
+
+    def _snmp_versions_to_try(self, host: str, community: str) -> list[int]:
+        """Try SNMPv2c first (mpModel=1), then fall back to SNMPv1 (mpModel=0).
+        A lot of DBC/Syrotech and other low-cost GPON OLTs never got v2c
+        (GETBULK) support in their firmware and just silently drop those
+        packets, which previously looked exactly like the OLT being offline.
+        Once we learn which version a host actually answers on, we remember
+        it so we don't pay the extra round-trip on every subsequent walk."""
+        key = self._snmp_cache_key(host, community)
+        cached = self._snmp_version_cache.get(key)
+        if cached is not None:
+            return [cached]
+        return [1, 0]
+
     def _snmp_walk(self, host: str, community: str, oid: str, timeout: float = 2.0, retries: int = 1) -> list[tuple[str, str]]:
         """Walks an SNMP subtree, returning (index_suffix, value) pairs so rows
         can be correlated across separate walks (e.g. matching ifIndex between
@@ -703,56 +731,67 @@ class LocalNetworkPoller:
         and OLT regardless of vendor, which is what makes this path work
         across Cisco, HPE, TP-Link, D-Link, Grandstream, and unbranded gear
         without a vendor-specific parser."""
-        if SNMP_MODE == "asyncio":
-            try:
-                return asyncio.run(_snmp_walk_async(host, community, oid, timeout, retries))
-            except Exception:
-                return []
-        if SNMP_MODE == "sync" and nextCmd is not None:
+        key = self._snmp_cache_key(host, community)
+        for mp_model in self._snmp_versions_to_try(host, community):
             rows: list[tuple[str, str]] = []
-            try:
-                iterator = nextCmd(
-                    SnmpEngine(),
-                    CommunityData(community, mpModel=1),
-                    UdpTransportTarget((host, 161), timeout=timeout, retries=retries),
-                    ContextData(),
-                    ObjectType(ObjectIdentity(oid)),
-                    lexicographicMode=False,
-                )
-                for error_indication, error_status, error_index, var_binds in iterator:
-                    if error_indication or error_status:
-                        break
-                    for var_bind in var_binds:
-                        oid_obj, value_obj = var_bind
-                        full_oid = str(oid_obj)
-                        if not full_oid.startswith(oid):
-                            continue
-                        rows.append((full_oid[len(oid):].lstrip("."), str(value_obj)))
-            except Exception:
-                pass
-            return rows
+            if SNMP_MODE == "asyncio":
+                try:
+                    rows = asyncio.run(_snmp_walk_async(host, community, oid, timeout, retries, mp_model))
+                except Exception:
+                    rows = []
+            elif SNMP_MODE == "sync" and nextCmd is not None:
+                try:
+                    iterator = nextCmd(
+                        SnmpEngine(),
+                        CommunityData(community, mpModel=mp_model),
+                        UdpTransportTarget((host, 161), timeout=timeout, retries=retries),
+                        ContextData(),
+                        ObjectType(ObjectIdentity(oid)),
+                        lexicographicMode=False,
+                    )
+                    for error_indication, error_status, error_index, var_binds in iterator:
+                        if error_indication or error_status:
+                            break
+                        for var_bind in var_binds:
+                            oid_obj, value_obj = var_bind
+                            full_oid = str(oid_obj)
+                            if not full_oid.startswith(oid):
+                                continue
+                            rows.append((full_oid[len(oid):].lstrip("."), str(value_obj)))
+                except Exception:
+                    rows = []
+            if rows:
+                self._snmp_version_cache[key] = mp_model
+                return rows
         return []
 
     def _snmp_get_ok(self, host: str, community: str, oid: str, timeout: float = 2.0, retries: int = 1) -> bool:
-        if SNMP_MODE == "asyncio":
-            try:
-                result = asyncio.run(_snmp_get_async(host, community, oid, timeout, retries))
-                return result is not None
-            except Exception:
-                return False
-        if SNMP_MODE == "sync" and getCmd is not None:
-            try:
-                iterator = getCmd(
-                    SnmpEngine(),
-                    CommunityData(community, mpModel=1),
-                    UdpTransportTarget((host, 161), timeout=timeout, retries=retries),
-                    ContextData(),
-                    ObjectType(ObjectIdentity(oid)),
-                )
-                for error_indication, error_status, error_index, var_binds in iterator:
-                    return not error_indication and not error_status
-            except Exception:
-                return False
+        key = self._snmp_cache_key(host, community)
+        for mp_model in self._snmp_versions_to_try(host, community):
+            ok = False
+            if SNMP_MODE == "asyncio":
+                try:
+                    result = asyncio.run(_snmp_get_async(host, community, oid, timeout, retries, mp_model))
+                    ok = result is not None
+                except Exception:
+                    ok = False
+            elif SNMP_MODE == "sync" and getCmd is not None:
+                try:
+                    iterator = getCmd(
+                        SnmpEngine(),
+                        CommunityData(community, mpModel=mp_model),
+                        UdpTransportTarget((host, 161), timeout=timeout, retries=retries),
+                        ContextData(),
+                        ObjectType(ObjectIdentity(oid)),
+                    )
+                    for error_indication, error_status, error_index, var_binds in iterator:
+                        ok = not error_indication and not error_status
+                        break
+                except Exception:
+                    ok = False
+            if ok:
+                self._snmp_version_cache[key] = mp_model
+                return True
         return False
 
     def _snmp_interface_table(self, host: str, community: str) -> dict[str, dict[str, Any]]:
@@ -858,6 +897,138 @@ class LocalNetworkPoller:
             "alerts": alerts,
         }
 
+    def _dbc_syrotech_community_candidates(self, device: dict[str, Any]) -> list[str]:
+        """DBC/Syrotech OLTs are VSOL-based firmware, shipped from the factory
+        with SNMP fully disabled ('snmp-server start' has to be run on the
+        OLT's own CLI before it will answer anything) and with two default
+        community strings once it is turned on: 'public' (read-only) and
+        'private' (read-write). If the person didn't override the community,
+        try both defaults instead of only 'public'."""
+        configured = self._norm(device.get("snmp_community"))
+        candidates = [configured] if configured else []
+        for fallback in ("public", "private"):
+            if fallback not in candidates:
+                candidates.append(fallback)
+        return candidates
+
+    def _dbc_syrotech_snmp_snapshot(self, device: dict[str, Any]) -> dict[str, Any]:
+        host = self._device_host(device)
+        last_snap: dict[str, Any] | None = None
+        for community in self._dbc_syrotech_community_candidates(device):
+            device_with_community = dict(device)
+            device_with_community["snmp_community"] = community
+            snap = self._snmp_snapshot(device_with_community)
+            last_snap = snap
+            if snap.get("reachable"):
+                snap["summary"] = snap.get("summary") or {}
+                snap["summary"]["snmp_community_used"] = community
+                return snap
+        return last_snap or {"host": host, "reachable": False, "latency_ms": None, "ping_output": "snmp-snapshot", "summary": {}}
+
+    _DBC_SYROTECH_CLI_COMMANDS = [
+        "show interface gigabitethernet status",
+        "show interface brief",
+        "show interface gpon-olt status",
+        "show interface",
+    ]
+
+    # Matches Cisco-style port lines such as:
+    #   GigabitEthernet0/1   up      up      1000    full
+    #   gpon-olt_0/1        enable   up
+    _CLI_IFACE_LINE_RE = re.compile(
+        r"^(?P<name>(?:gigabitethernet|gpon-olt|gpon-onu|epon-olt|fastethernet|ge|gi)\S*)\s+"
+        r"(?P<admin>up|down|enable|disable)\s+(?P<oper>up|down)\b",
+        re.IGNORECASE,
+    )
+
+    def _dbc_syrotech_cli_interfaces(self, device: dict[str, Any]) -> tuple[list[dict[str, Any]], str | None]:
+        """Best-effort parser for the Cisco-style CLI these OLTs expose over
+        SSH (confirmed by vendor config dumps showing 'interface
+        gigabitethernet 0/x' blocks and 'crypto key generate rsa', i.e. SSH
+        management is present on this platform). Different firmware builds
+        word their 'show interface' output slightly differently, so several
+        candidate commands/patterns are tried; if none match, this returns
+        an empty list rather than guessing."""
+        host = self._device_host(device)
+        username = self._norm(device.get("username"))
+        password = self._norm(device.get("password"))
+        if not (username and password):
+            return [], "no SSH username/password saved for this device"
+        last_error: str | None = None
+        for command in self._DBC_SYROTECH_CLI_COMMANDS:
+            try:
+                output = self._ssh_command(host, username, password, command)
+            except Exception as exc:
+                last_error = str(exc)
+                continue
+            if not output:
+                continue
+            ports: list[dict[str, Any]] = []
+            for line in output.splitlines():
+                match = self._CLI_IFACE_LINE_RE.match(line.strip())
+                if not match:
+                    continue
+                admin = match.group("admin").lower()
+                oper = match.group("oper").lower()
+                status = "admin_down" if admin in ("down", "disable") else oper
+                ports.append({"name": match.group("name"), "status": status, "rx-byte": 0, "tx-byte": 0})
+            if ports:
+                return ports, None
+        return [], last_error or "CLI did not return a recognizable interface table"
+
+    def _dbc_syrotech_snapshot(self, device: dict[str, Any]) -> dict[str, Any]:
+        host = self._device_host(device)
+        snap = self._dbc_syrotech_snmp_snapshot(device)
+        summary = snap.setdefault("summary", {})
+        if snap.get("reachable") and summary.get("ports", 0):
+            summary["note"] = (
+                f"DBC/Syrotech OLT: SNMP responded using community "
+                f"'{summary.get('snmp_community_used', 'public')}'."
+            )
+            return snap
+        # SNMP gave nothing usable (either the OLT genuinely isn't reachable,
+        # or - very common on these OLTs - the SNMP daemon was never turned
+        # on with 'snmp-server start' on the OLT itself). Fall back to the
+        # Cisco-style CLI over SSH, which these OLTs support out of the box.
+        cli_ports, cli_error = self._dbc_syrotech_cli_interfaces(device)
+        if cli_ports:
+            down_ports = [p["name"] for p in cli_ports if p["status"] in ("down", "admin_down")]
+            snap["reachable"] = True
+            snap["protocol"] = "ssh"
+            summary["ports"] = len(cli_ports)
+            summary["port_details"] = cli_ports
+            summary["ports_up"] = sum(1 for p in cli_ports if p["status"] == "up")
+            summary["ports_down"] = len(down_ports)
+            summary["ports_admin_down"] = len([p for p in cli_ports if p["status"] == "admin_down"])
+            summary["note"] = "DBC/Syrotech OLT: SNMP unavailable, interfaces read via SSH CLI instead."
+            snap["alerts"] = [
+                {
+                    "event_type": "device.port_down",
+                    "severity": "critical",
+                    "host": host,
+                    "port": name,
+                    "summary": f"{host} port {name} is down",
+                }
+                for name in down_ports
+            ]
+            return snap
+        # Neither SNMP nor CLI produced interfaces - give a precise, actionable
+        # reason instead of a bare "offline", since in practice this is almost
+        # always one of a small number of causes on this OLT platform.
+        community_tried = ", ".join(self._dbc_syrotech_community_candidates(device))
+        reasons = [
+            f"SNMP: no response using community/ies '{community_tried}' (tried SNMPv2c and v1).",
+            "This platform ships with SNMP OFF by default - log into the OLT CLI (SSH/telnet/web) "
+            "and run: snmp-server start, then snmp-server community public ro (and/or "
+            "snmp-server community private rw), and make sure the community here matches.",
+        ]
+        if cli_error:
+            reasons.append(f"SSH CLI fallback also failed: {cli_error}.")
+        else:
+            reasons.append("SSH CLI fallback was not attempted (no username/password saved for this device).")
+        summary["note"] = " ".join(reasons)
+        return snap
+
     def _cisco_ssh_snapshot(self, device: dict[str, Any]) -> dict[str, Any]:
         # SNMP already gives vendor-agnostic ports/traffic/mac-table; SSH here
         # only adds what SNMP can't reliably get on IOS: CPU and temperature.
@@ -945,14 +1116,19 @@ class LocalNetworkPoller:
             protocol = self._device_protocol(device)
             if protocol == "auto":
                 scan_ports = self._port_scan(host, ports=[80, 443, 8080, 8728, 8729, 161, 22, 8291])
-                if any(port in scan_ports for port in (80, 443, 8080, 8728, 8729)):
+                vendor_model_text = " ".join([self._norm(device.get("vendor_family")), self._norm(device.get("vendor")), self._norm(device.get("model"))]).lower()
+                if any(tag in vendor_model_text for tag in ("mikrotik", "routeros")):
+                    protocol = "rest"
+                elif any(tag in vendor_model_text for tag in ("dbc", "syrotech")):
+                    protocol = "dbc_syrotech"
+                elif any(port in scan_ports for port in (80, 443, 8080, 8728, 8729)):
                     protocol = "rest"
                 elif 161 in scan_ports or self._norm(device.get("snmp_community")):
                     protocol = "snmp"
                 elif 22 in scan_ports or (self._norm(device.get("username")) and self._norm(device.get("password"))):
                     protocol = "ssh"
                 else:
-                    protocol = "rest" if any(tag in " ".join([self._norm(device.get("vendor_family")), self._norm(device.get("vendor")), self._norm(device.get("model"))]).lower() for tag in ("mikrotik", "routeros")) else "snmp"
+                    protocol = "snmp"
             if protocol == "rest":
                 snap = self._mikrotik_rest_snapshot(device)
                 snap["reachable"] = bool(snap.get("reachable")) or bool(reach.get("reachable"))
@@ -971,11 +1147,49 @@ class LocalNetworkPoller:
                 snap["latency_ms"] = reach.get("latency_ms")
                 snap["ping_output"] = reach.get("ping_output") or snap.get("ping_output")
                 return snap
+            if protocol == "dbc_syrotech":
+                snap = self._dbc_syrotech_snapshot(device)
+                snap["latency_ms"] = reach.get("latency_ms")
+                snap["ping_output"] = reach.get("ping_output") or snap.get("ping_output")
+                if not snap.get("reachable") and reach.get("reachable"):
+                    # Host answers ping/TCP but neither SNMP nor SSH CLI
+                    # produced anything - still surface it as reachable so it
+                    # doesn't look like a dead OLT, the note already explains
+                    # the likely cause (SNMP off, wrong creds, etc).
+                    snap["reachable"] = True
+                return snap
             if protocol == "snmp":
                 snap = self._snmp_snapshot(device)
-                if snap.get("summary", {}).get("ports", 0):
-                    snap["latency_ms"] = reach.get("latency_ms")
-                    snap["ping_output"] = reach.get("ping_output") or snap.get("ping_output")
+                snap["latency_ms"] = reach.get("latency_ms")
+                snap["ping_output"] = reach.get("ping_output") or snap.get("ping_output")
+                if snap.get("reachable"):
+                    # SNMP answered. Return it as-is even if ifTable came
+                    # back with 0 ports (e.g. an OLT that exposes its PON/GE
+                    # ports under vendor-enterprise OIDs instead of the
+                    # standard ifTable) rather than silently discarding a
+                    # valid response and reporting "offline".
+                    if not snap.get("summary", {}).get("ports", 0):
+                        snap.setdefault("summary", {})["note"] = (
+                            "SNMP responded (device is online) but the standard IF-MIB ifTable "
+                            "returned no interfaces. This OLT model likely exposes its PON/GE "
+                            "ports under a vendor-specific enterprise MIB instead of the standard "
+                            "one - it needs a vendor-specific OID set, not a real connectivity issue."
+                        )
+                    return snap
+                if reach.get("reachable"):
+                    # Host answers ping/TCP but SNMP (v2c and v1) got no
+                    # response at all - almost always a wrong community
+                    # string, SNMP disabled on the OLT's management
+                    # VLAN/IP, or an ACL blocking this agent's IP; not the
+                    # OLT actually being offline.
+                    snap["reachable"] = True
+                    community = self._norm(device.get("snmp_community") or "public")
+                    snap.setdefault("summary", {})["note"] = (
+                        f"Device is reachable on the network but did not respond to SNMP "
+                        f"(tried v2c and v1) using community '{community}'. Check that SNMP is "
+                        f"enabled on the OLT's management VLAN/IP, the community string matches "
+                        f"exactly (case-sensitive), and no ACL is blocking this agent's IP."
+                    )
                     return snap
             if protocol == "ssh":
                 snap = self._ssh_snapshot(device)
