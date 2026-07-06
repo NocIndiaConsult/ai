@@ -293,10 +293,29 @@ class WindowsAgent:
         poll_inputs: list[Any] = list(self.local_devices) + [{"host": host} for host in newly_seen_hosts]
         if not poll_inputs:
             poll_inputs = [{"host": host} for host in targets]
+        devices_by_host = {
+            str(item.get("host") or item.get("mgmt_ip") or "").strip(): item
+            for item in self.local_devices
+            if isinstance(item, dict)
+        }
         auto_added = 0
         for result in self.poller.scan(cidr=None, manual_targets=poll_inputs):
             results.append(result)
             host = str(result.get("host") or "").strip()
+            device_entry = devices_by_host.get(host)
+            if host and device_entry is not None:
+                probe_summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}
+                device_entry["reachable"] = bool(result.get("reachable"))
+                device_entry["latency_ms"] = result.get("latency_ms")
+                device_entry["protocol"] = result.get("protocol") or device_entry.get("access_protocol")
+                device_entry["open_ports"] = probe_summary.get("port_details") or device_entry.get("open_ports") or []
+                device_entry["interfaces"] = device_entry["open_ports"]
+                device_entry["summary"] = probe_summary
+                device_entry["last_probed_at"] = utc_now()
+                if result.get("reachable"):
+                    device_entry["last_seen"] = utc_now()
+                if result.get("probe_error"):
+                    device_entry["probe_error"] = result.get("probe_error")
             if host and host in newly_seen_hosts and result.get("reachable"):
                 # This device replied to a ping/probe from this PC for the
                 # first time - register it automatically so it shows up
@@ -336,10 +355,33 @@ class WindowsAgent:
             self.settings.local_targets = targets
             self.cache.save_agent_profile(self.settings)
             self.cache.add_event("device_auto_discovered", {"count": auto_added, "at": utc_now()})
+        # Re-apply this cycle's probe results (reachable/latency/interfaces)
+        # onto self.local_devices by host. Needed as a safety net in case the
+        # auto_added reload above replaced the list objects that were
+        # mutated in-place during the scan loop.
+        results_by_host = {str(item.get("host") or "").strip(): item for item in results if isinstance(item, dict)}
+        for device_entry in self.local_devices:
+            if not isinstance(device_entry, dict):
+                continue
+            host = str(device_entry.get("host") or device_entry.get("mgmt_ip") or "").strip()
+            result = results_by_host.get(host)
+            if not result:
+                continue
+            probe_summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}
+            device_entry["reachable"] = bool(result.get("reachable"))
+            device_entry["latency_ms"] = result.get("latency_ms")
+            device_entry["protocol"] = result.get("protocol") or device_entry.get("access_protocol")
+            device_entry["open_ports"] = probe_summary.get("port_details") or device_entry.get("open_ports") or []
+            device_entry["interfaces"] = device_entry["open_ports"]
+            device_entry["summary"] = probe_summary
+            device_entry["last_probed_at"] = utc_now()
+            if result.get("reachable"):
+                device_entry["last_seen"] = utc_now()
         alerts.extend(self._detect_network_loop_alerts(results))
         self.last_local_inventory = results
         self.cache.save_local_targets(targets)
         self.cache.save_local_devices(self.local_devices)
+        self.settings.local_devices = self.local_devices
         self.last_local_alerts = alerts
         self.active_local_alerts = self._merge_local_alerts(self.active_local_alerts, alerts, results)
         self.last_local_metrics = metrics | {

@@ -179,6 +179,31 @@ def _build_html() -> str:
     pre{white-space:pre-wrap;word-break:break-word;margin:0;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.5;color:#dbe7ff}
     .status-good{color:var(--good)} .status-warn{color:var(--warn)} .status-bad{color:var(--bad)}
     .main::-webkit-scrollbar{width:10px}.main::-webkit-scrollbar-thumb{background:rgba(140,154,214,.18);border-radius:20px;border:2px solid transparent;background-clip:content-box}
+    .row.clickable{cursor:pointer;transition:background .12s ease,border-color .12s ease}
+    .row.clickable:hover{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.14)}
+    .status-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:middle}
+    .status-dot.good{background:var(--good);box-shadow:0 0 8px rgba(45,227,156,.7)}
+    .status-dot.bad{background:var(--bad);box-shadow:0 0 8px rgba(255,107,123,.7)}
+    .status-dot.warn{background:var(--warn);box-shadow:0 0 8px rgba(255,184,77,.6)}
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(3,5,14,.72);backdrop-filter:blur(3px);z-index:999;align-items:flex-start;justify-content:center;padding:5vh 16px;overflow:auto}
+    .modal-overlay.open{display:flex}
+    .modal-card{width:min(760px,100%);background:linear-gradient(180deg, rgba(15,21,40,.98), rgba(9,13,26,.99));border:1px solid rgba(255,255,255,.08);border-radius:20px;box-shadow:var(--shadow);padding:22px;max-height:90vh;overflow:auto}
+    .modal-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:6px}
+    .modal-head h3{margin:0;font-size:19px;font-weight:800}
+    .modal-head p{margin:6px 0 0;color:var(--muted);font-size:12.5px}
+    .modal-close{all:unset;cursor:pointer;color:var(--muted);font-size:20px;line-height:1;padding:4px 8px;border-radius:10px}
+    .modal-close:hover{background:rgba(255,255,255,.08);color:var(--text)}
+    .modal-meta{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+    .iface-table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+    .iface-table th{text-align:left;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08)}
+    .iface-table td{padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.05)}
+    .iface-table tr:last-child td{border-bottom:none}
+    .iface-badge{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:700}
+    .iface-badge.up{background:rgba(45,227,156,.14);color:var(--good)}
+    .iface-badge.down{background:rgba(255,107,123,.14);color:var(--bad)}
+    .iface-badge.admin_down{background:rgba(255,184,77,.14);color:var(--warn)}
+    .iface-badge.unknown{background:rgba(255,255,255,.08);color:var(--muted)}
+    .modal-actions{display:flex;gap:10px;margin-top:16px}
     @media (max-width: 1360px){.grid6{grid-template-columns:repeat(3,minmax(0,1fr))}.layout{grid-template-columns:1fr}.quick-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
     @media (max-width: 980px){body{overflow:auto}.shell{grid-template-columns:1fr}.side{border-right:none;border-bottom:1px solid rgba(255,255,255,.06)}.grid6{grid-template-columns:repeat(2,minmax(0,1fr))}.subgrid4,.quick-grid{grid-template-columns:1fr}.topbar{flex-direction:column}.top-actions{width:100%;justify-content:flex-start}.searchbar{max-width:none;width:100%}}
     @media (max-width: 760px){.grid6,.subgrid4,.quick-grid,.two{grid-template-columns:1fr}.row{grid-template-columns:1fr}.main{padding:16px}.side{padding:16px}.topology-wrap svg{height:260px}}
@@ -285,7 +310,8 @@ def _build_html() -> str:
           </div>
           <div class="flex" style="margin-bottom:12px"><button class="btn" onclick="addTarget()">Add Device</button><button class="btn secondary" onclick="removeTarget()">Remove Device</button></div>
           <div class="pill" id="deviceAddStatus" style="margin-bottom:12px">Ready to add a device.</div>
-          <div class="legend" style="margin-bottom:12px"><span><i style="background:var(--good)"></i>Saved targets</span><span><i style="background:var(--blue)"></i>Live inventory</span></div>
+          <div class="legend" style="margin-bottom:12px"><span><i style="background:var(--good)"></i>Online</span><span><i style="background:var(--warn)"></i>Checking / not probed yet</span><span><i style="background:var(--bad)"></i>Offline</span></div>
+          <div class="small" style="margin-bottom:10px">Click any device below to see its live status and interfaces.</div>
           <div class="list" id="deviceList"></div>
         </div>
       </section>
@@ -327,6 +353,24 @@ def _build_html() -> str:
       <section class="tabs" id="tab-onprem"><div class="card"><div class="section-title"><div><h3>On-Prem Polling</h3><span>Local network scan</span></div></div><div class="stack"><div class="pill">Scan status: <strong id="scanStatus">Idle</strong></div><div class="pill">Targets count: <strong id="scanTargets">0</strong></div><div class="pill">Online hosts: <strong id="scanOnline">0</strong></div></div><div style="height:12px"></div><div class="list" id="inventoryList"></div></div></section>
       <section class="tabs" id="tab-settings"><div class="two"><div class="card"><div class="section-title"><div><h3>Settings</h3><span>Agent config</span></div></div><div class="stack"><input class="input" id="serverUrl" placeholder="Server URL"/><input class="input" id="companyId" placeholder="Company ID"/><input class="input" id="agentNameInput" placeholder="Agent Name"/><input class="input" id="discoveryCidr" placeholder="Discovery CIDR"/><input class="input" id="localTargets" placeholder="Local targets (comma separated)"/><div class="flex"><button class="btn" onclick="saveSettings()">Save</button><button class="btn secondary" onclick="action('sync')">Resync</button></div></div></div><div class="card"><div class="section-title"><div><h3>Snapshot</h3><span>Local runtime</span></div></div><pre id="snapshotBox">-</pre></div></div></section>
     </main>
+  </div>
+  <div class="modal-overlay" id="deviceModal" onclick="if(event.target===this) closeDeviceModal()">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <h3 id="devModalTitle">Device</h3>
+          <p id="devModalSubtitle">-</p>
+        </div>
+        <button class="modal-close" onclick="closeDeviceModal()">✕</button>
+      </div>
+      <div class="modal-meta" id="devModalMeta"></div>
+      <div class="section-title"><div><h3 style="font-size:14px">Interfaces</h3><span id="devModalIfaceNote">Ports/interfaces reported by the device</span></div></div>
+      <div id="devModalIfaceWrap"><table class="iface-table"><thead><tr><th>Interface</th><th>Status</th><th>Rx bytes</th><th>Tx bytes</th></tr></thead><tbody id="devModalIfaceBody"></tbody></table></div>
+      <div class="modal-actions">
+        <button class="btn" onclick="refreshDeviceModal()">Refresh now</button>
+        <button class="btn secondary" onclick="closeDeviceModal()">Close</button>
+      </div>
+    </div>
   </div>
   <script>
     const navItems = [["dashboard","Dashboard","▦"],["devices","Devices","🖥"],["diagnose","Diagnose","🩺"],["topology","Topology","⎇"],["alerts","Alerts","🔔"],["ai","AI Assistant","✦"],["commands","Commands","⌘"],["automation","Automation","⚙"],["reports","Reports","▲"],["settings","Settings","⛭"]];
@@ -388,12 +432,12 @@ def _build_html() -> str:
         return { item, x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) * 0.82 };
       });
       nodePts.forEach(p => {
-        const cls = p.item.reachable === false ? "offline" : (p.item.source === "live" ? "" : "unknown");
+        const cls = p.item.reachable === false ? "offline" : (p.item.reachable === true ? "" : "unknown");
         parts.push(`<line class="topo-link ${cls}" x1="${cx}" y1="${cy}" x2="${p.x}" y2="${p.y}"/>`);
       });
       parts.push(`<circle class="topo-hub" cx="${cx}" cy="${cy}" r="40"/><text class="topo-label" x="${cx}" y="${cy+4}" text-anchor="middle" font-size="12" font-weight="700" fill="#04231a">Agent</text>`);
       nodePts.forEach(p => {
-        const color = p.item.reachable === false ? "#ff6b7b" : (p.item.source === "live" ? "#2de39c" : "#ffb84d");
+        const color = p.item.reachable === false ? "#ff6b7b" : (p.item.reachable === true ? "#2de39c" : "#ffb84d");
         const label = String(p.item.host || "").slice(0, 16);
         parts.push(`<circle class="topo-node" cx="${p.x}" cy="${p.y}" r="16" fill="${color}" fill-opacity="0.85"/>`);
         const ty = p.y > cy ? p.y + 26 : p.y - 20;
@@ -485,36 +529,64 @@ def _build_html() -> str:
         const host = String(item.host || item.mgmt_ip || "").trim();
         if (host) liveInventory.set(host, item);
       });
-      const targets = (d.local_devices || d.local_targets || []).map(item => typeof item === 'string' ? ({ host: item, source: "saved", reachable: null, latency_ms: null, open_ports: [], last_seen: null, type: "saved target" }) : ({
+      const targets = (d.local_devices || d.local_targets || []).map(item => typeof item === 'string' ? ({ host: item, source: "saved", reachable: null, latency_ms: null, open_ports: [], interfaces: [], last_seen: null, type: "saved target" }) : ({
         host: item.host || item.mgmt_ip,
         source: "saved",
         reachable: item.reachable ?? null,
         latency_ms: item.latency_ms ?? null,
-        open_ports: item.open_ports || [],
+        open_ports: item.open_ports || item.interfaces || [],
+        interfaces: item.interfaces || item.open_ports || [],
         last_seen: item.last_seen || null,
+        last_probed_at: item.last_probed_at || null,
+        probe_error: item.probe_error || null,
         type: item.device_type || item.vendor_family || item.vendor || "saved target",
         vendor: item.vendor || "",
         vendor_family: item.vendor_family || "",
         model: item.model || "",
-        protocol: item.access_protocol || "auto",
+        protocol: item.protocol || item.access_protocol || "auto",
+        access_protocol: item.access_protocol || "auto",
         username: item.username || "",
       }));
-      const liveRows = Array.from(liveInventory.values()).map(item => ({ ...item, source: "live" }));
+      // Merge saved devices with any matching live-inventory record for the
+      // same host, so a device that has been added AND is being actively
+      // polled shows its real online/offline state and interfaces instead
+      // of the live data being silently discarded.
       const mergedDevices = [];
       const seenHosts = new Set();
-      [...targets, ...liveRows].forEach(item => {
+      targets.forEach(item => {
         const host = String(item.host || "").trim();
         if (!host || seenHosts.has(host)) return;
         seenHosts.add(host);
-        mergedDevices.push(item);
+        const live = liveInventory.get(host);
+        if (live) {
+          mergedDevices.push({
+            ...item,
+            source: "live",
+            reachable: live.reachable ?? item.reachable ?? null,
+            latency_ms: live.latency_ms ?? item.latency_ms ?? null,
+            open_ports: (live.open_ports && live.open_ports.length) ? live.open_ports : item.open_ports,
+            interfaces: (live.interfaces && live.interfaces.length) ? live.interfaces : item.interfaces,
+            last_seen: live.last_seen || item.last_seen || null,
+          });
+        } else {
+          mergedDevices.push(item);
+        }
+      });
+      liveInventory.forEach((item, host) => {
+        if (seenHosts.has(host)) return;
+        seenHosts.add(host);
+        mergedDevices.push({ ...item, host, source: "live" });
       });
       const totalDeviceCount = mergedDevices.length;
-      const onlineDeviceCount = mergedDevices.filter(item => item.reachable !== false).length;
+      const onlineDeviceCount = mergedDevices.filter(item => item.reachable === true).length;
       const mDevicesEl = document.getElementById("mDevices");
       const mDevicesSubEl = document.getElementById("mDevicesSub");
       if (mDevicesEl) mDevicesEl.textContent = String(totalDeviceCount);
       if (mDevicesSubEl) mDevicesSubEl.textContent = `Online: ${onlineDeviceCount}`;
       lastMergedDevices = mergedDevices;
+      const deviceByHost = {};
+      mergedDevices.forEach(item => { if (item.host) deviceByHost[String(item.host)] = item; });
+      window.__deviceByHost = deviceByHost;
       const diagSelect = document.getElementById("diagDeviceSelect");
       if (diagSelect) {
         const prevValue = diagSelect.value;
@@ -532,24 +604,30 @@ def _build_html() -> str:
       renderTopology(mergedDevices);
       mergedDevices.forEach(item => {
         const row = document.createElement("div");
-        row.className = "row";
-        const isLive = item.source === "live";
-        const reachClass = item.reachable === false ? 'status-bad' : isLive ? 'status-good' : 'status-warn';
-        const reachText = item.reachable === false ? 'offline' : isLive ? 'online' : 'saved';
-        const openPorts = Array.isArray(item.open_ports) ? item.open_ports : [];
+        row.className = "row clickable";
+        // Tri-state status: true -> online, false -> offline, null/undefined
+        // (never probed yet) -> checking/unknown. This is the actual signal
+        // the person needs right after adding a device.
+        let reachClass = 'status-warn';
+        let reachText = 'checking...';
+        let dotClass = 'warn';
+        if (item.reachable === true) { reachClass = 'status-good'; reachText = 'online'; dotClass = 'good'; }
+        else if (item.reachable === false) { reachClass = 'status-bad'; reachText = 'offline'; dotClass = 'bad'; }
+        const openPorts = Array.isArray(item.interfaces) && item.interfaces.length ? item.interfaces : (Array.isArray(item.open_ports) ? item.open_ports : []);
         const protocolText = item.protocol || item.access_protocol || 'auto';
         const statusBits = [
-          reachText,
           protocolText ? `proto ${protocolText}` : '',
           item.vendor ? `vendor ${item.vendor}` : '',
           item.model ? `model ${item.model}` : '',
         ].filter(Boolean).join(' ? ');
-        const portText = openPorts.length ? openPorts.map(p => typeof p === 'object' ? (p.name || p.port || p.label || '') : String(p)).filter(Boolean).slice(0, 6).join(', ') : '-';
-        row.innerHTML = `<div><strong>${item.host}</strong><div class="small">${item.type || (isLive ? "live inventory" : "saved target")} ? ${statusBits}</div></div>
-          <div class="${reachClass}">${reachText}</div>
+        const ifaceCount = openPorts.length;
+        const portText = ifaceCount ? `${ifaceCount} interface${ifaceCount === 1 ? '' : 's'} · click to view` : (item.reachable === null || item.reachable === undefined ? 'not probed yet' : 'no interface data');
+        row.innerHTML = `<div><strong>${item.host}</strong><div class="small">${item.type || "device"} ? ${statusBits}</div></div>
+          <div class="${reachClass}"><span class="status-dot ${dotClass}"></span>${reachText}</div>
           <div>${item.latency_ms ?? '-'}</div>
           <div>${portText}</div>
           <div class="small">${item.last_seen || item.probe_error || '-'}</div>`;
+        row.onclick = () => openDeviceModal(item.host);
         dev.appendChild(row);
       });
       if (!dev.children.length) dev.innerHTML = '<div class="small">No targets yet.</div>';
@@ -698,6 +776,90 @@ def _build_html() -> str:
           row.style.display = row.textContent.toLowerCase().includes(q) ? "" : "none";
         });
       }, 50);
+    }
+    let currentModalHost = null;
+    function ifaceBadgeClass(status){
+      const s = String(status || '').toLowerCase();
+      if (s === 'up') return 'up';
+      if (s === 'down') return 'down';
+      if (s === 'admin_down') return 'admin_down';
+      return 'unknown';
+    }
+    function fmtBytes(n){
+      const num = Number(n);
+      if (!isFinite(num) || num <= 0) return '0 B';
+      const units = ['B','KB','MB','GB','TB'];
+      let i = 0; let v = num;
+      while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+      return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
+    }
+    function renderDeviceModal(item){
+      if (!item) return;
+      const title = document.getElementById("devModalTitle");
+      const subtitle = document.getElementById("devModalSubtitle");
+      const meta = document.getElementById("devModalMeta");
+      const body = document.getElementById("devModalIfaceBody");
+      const note = document.getElementById("devModalIfaceNote");
+      title.textContent = item.host || currentModalHost || 'Device';
+      let statusLabel = 'checking...'; let statusColor = 'var(--warn)';
+      if (item.reachable === true) { statusLabel = 'online'; statusColor = 'var(--good)'; }
+      else if (item.reachable === false) { statusLabel = 'offline'; statusColor = 'var(--bad)'; }
+      subtitle.innerHTML = `<span style="color:${statusColor};font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:.04em">${statusLabel}</span> · ${item.type || item.device_type || 'device'}${item.last_seen ? ' · last seen ' + item.last_seen : ''}`;
+      const chips = [
+        item.vendor ? `Vendor: ${item.vendor}` : '',
+        item.model ? `Model: ${item.model}` : '',
+        (item.protocol || item.access_protocol) ? `Protocol: ${item.protocol || item.access_protocol}` : '',
+        item.latency_ms != null ? `Latency: ${item.latency_ms} ms` : '',
+      ].filter(Boolean);
+      meta.innerHTML = chips.map(c => `<span class="pill">${c}</span>`).join('');
+      const ifaces = Array.isArray(item.interfaces) && item.interfaces.length ? item.interfaces : (Array.isArray(item.open_ports) ? item.open_ports : []);
+      body.innerHTML = '';
+      if (!ifaces.length) {
+        note.textContent = item.probe_error ? `Could not read interfaces: ${item.probe_error}` : 'No interface data yet — click "Refresh now" to probe this device.';
+      } else {
+        note.textContent = `${ifaces.length} interface${ifaces.length === 1 ? '' : 's'} reported by the device`;
+        ifaces.forEach(p => {
+          const name = typeof p === 'object' ? (p.name || p.port || p.label || '-') : String(p);
+          const status = typeof p === 'object' ? (p.status || '-') : '-';
+          const rx = typeof p === 'object' ? (p['rx-byte'] ?? p.rx_byte ?? p.rx ?? 0) : 0;
+          const tx = typeof p === 'object' ? (p['tx-byte'] ?? p.tx_byte ?? p.tx ?? 0) : 0;
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td><strong>${name}</strong></td><td><span class="iface-badge ${ifaceBadgeClass(status)}">${status}</span></td><td>${fmtBytes(rx)}</td><td>${fmtBytes(tx)}</td>`;
+          body.appendChild(tr);
+        });
+      }
+    }
+    function openDeviceModal(host){
+      if (!host) return;
+      currentModalHost = host;
+      const item = (window.__deviceByHost || {})[host] || { host };
+      renderDeviceModal(item);
+      document.getElementById("deviceModal").classList.add("open");
+      refreshDeviceModal();
+    }
+    function closeDeviceModal(){
+      currentModalHost = null;
+      document.getElementById("deviceModal").classList.remove("open");
+    }
+    async function refreshDeviceModal(){
+      if (!currentModalHost) return;
+      const host = currentModalHost;
+      try {
+        const r = await fetch('/api/agent/device/probe', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ host })
+        });
+        const data = await r.json().catch(() => ({}));
+        if (currentModalHost !== host) return; // modal switched/closed while probing
+        if (data && data.ok && data.device) {
+          renderDeviceModal(data.device);
+          if (window.__deviceByHost) window.__deviceByHost[host] = { ...window.__deviceByHost[host], ...data.device };
+        }
+      } catch (e) {
+        // Keep showing whatever cached data we already rendered.
+      }
+      setTimeout(load, 300);
     }
     async function addTarget(){
       const host = document.getElementById("targetInput").value.trim();
@@ -909,6 +1071,34 @@ class AgentUI:
                         parent.settings.local_devices = cleaned_devices
                         parent.cache.save_local_devices(cleaned_devices)
                     parent.cache.save_agent_profile(parent.settings); _json_response(self, {"ok": True}); return
+                if parsed.path == "/api/agent/device/probe":
+                    try:
+                        host = str(data.get("mgmt_ip") or data.get("host") or "").strip()
+                        if not host:
+                            _json_response(self, {"ok": False, "error": "host is required"}, 400); return
+                        devices = parent.cache.load_local_devices()
+                        device_record = next(
+                            (item for item in devices if str(item.get("host") or item.get("mgmt_ip") or "").strip() == host),
+                            None,
+                        ) or {"host": host, "mgmt_ip": host}
+                        probe = parent.agent.poller.probe_device(device_record)
+                        probe_summary = probe.get("summary") if isinstance(probe, dict) and isinstance(probe.get("summary"), dict) else {}
+                        device_record["reachable"] = bool(probe.get("reachable")) if isinstance(probe, dict) else False
+                        device_record["latency_ms"] = probe.get("latency_ms") if isinstance(probe, dict) else None
+                        device_record["protocol"] = (probe.get("protocol") if isinstance(probe, dict) else None) or device_record.get("access_protocol")
+                        device_record["open_ports"] = probe_summary.get("port_details") or device_record.get("open_ports") or []
+                        device_record["interfaces"] = device_record["open_ports"]
+                        device_record["summary"] = probe_summary
+                        from datetime import datetime, timezone
+                        now_iso = datetime.now(timezone.utc).isoformat()
+                        device_record["last_probed_at"] = now_iso
+                        if device_record["reachable"]:
+                            device_record["last_seen"] = now_iso
+                        parent.cache.add_local_device(device_record)
+                        parent.settings.local_devices = parent.cache.load_local_devices()
+                        _json_response(self, {"ok": True, "host": host, "probe": probe, "device": device_record}); return
+                    except Exception as exc:
+                        _json_response(self, {"ok": False, "error": str(exc)}); return
                 if parsed.path == "/api/agent/device":
                     try:
                         host = str(data.get("mgmt_ip") or data.get("host") or "").strip()

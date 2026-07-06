@@ -333,6 +333,15 @@ class LocalCache:
                     "password": item.get("password"),
                     "snmp_community": item.get("snmp_community"),
                     "location": item.get("location"),
+                    "reachable": item.get("reachable"),
+                    "latency_ms": item.get("latency_ms"),
+                    "protocol": item.get("protocol") or item.get("access_protocol"),
+                    "open_ports": item.get("open_ports") or item.get("interfaces") or [],
+                    "interfaces": item.get("interfaces") or item.get("open_ports") or [],
+                    "last_seen": item.get("last_seen"),
+                    "last_probed_at": item.get("last_probed_at"),
+                    "probe_error": item.get("probe_error"),
+                    "summary": item.get("summary") if isinstance(item.get("summary"), dict) else {},
                 }
             )
         return devices
@@ -361,6 +370,15 @@ class LocalCache:
                     "password": item.get("password"),
                     "snmp_community": item.get("snmp_community"),
                     "location": item.get("location"),
+                    "reachable": item.get("reachable"),
+                    "latency_ms": item.get("latency_ms"),
+                    "protocol": item.get("protocol") or item.get("access_protocol"),
+                    "open_ports": item.get("open_ports") or item.get("interfaces") or [],
+                    "interfaces": item.get("interfaces") or item.get("open_ports") or [],
+                    "last_seen": item.get("last_seen"),
+                    "last_probed_at": item.get("last_probed_at"),
+                    "probe_error": item.get("probe_error"),
+                    "summary": item.get("summary") if isinstance(item.get("summary"), dict) else {},
                 }
             )
         self.save_setting("local_devices", cleaned)
