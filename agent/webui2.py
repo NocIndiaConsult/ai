@@ -196,6 +196,14 @@ def _build_html() -> str:
     .modal-close{all:unset;cursor:pointer;color:var(--muted);font-size:20px;line-height:1;padding:4px 8px;border-radius:10px}
     .modal-close:hover{background:rgba(255,255,255,.08);color:var(--text)}
     .modal-meta{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+    .iface-tabbar{display:flex;gap:6px;margin-top:12px;border-bottom:1px solid rgba(255,255,255,.08);padding-bottom:0}
+    .iface-tab-btn{all:unset;cursor:pointer;padding:9px 14px;font-size:12.5px;font-weight:700;color:var(--muted);border-radius:10px 10px 0 0;border-bottom:2px solid transparent;transition:color .12s ease,border-color .12s ease,background .12s ease}
+    .iface-tab-btn:hover{color:var(--text);background:rgba(255,255,255,.04)}
+    .iface-tab-btn.active{color:#8fb2ff;border-bottom:2px solid #4f7cff;background:rgba(79,124,255,.08)}
+    .iface-tab-btn .cnt{margin-left:6px;font-size:10.5px;color:var(--muted);background:rgba(255,255,255,.06);padding:1px 6px;border-radius:999px}
+    .iface-panel{display:none}
+    .iface-panel.active{display:block}
+    .iface-empty{padding:16px 10px;color:var(--muted);font-size:12.5px;text-align:center}
     .iface-table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
     .iface-table th{text-align:left;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08)}
     .iface-table td{padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.05)}
@@ -352,7 +360,18 @@ def _build_html() -> str:
       </div>
       <div class="modal-meta" id="devModalMeta"></div>
       <div class="section-title"><div><h3 style="font-size:14px">Interfaces</h3><span id="devModalIfaceNote">Ports/interfaces reported by the device</span></div></div>
-      <div id="devModalIfaceWrap"><table class="iface-table"><thead><tr><th>Interface</th><th>Status</th><th>Rx bytes</th><th>Tx bytes</th></tr></thead><tbody id="devModalIfaceBody"></tbody></table></div>
+      <div class="iface-tabbar" id="ifaceTabbar">
+        <button class="iface-tab-btn active" data-key="uplink" onclick="setIfaceTab('uplink')">Uplink<span class="cnt" id="ifaceCnt-uplink">0</span></button>
+        <button class="iface-tab-btn" data-key="pon" onclick="setIfaceTab('pon')">PON Port<span class="cnt" id="ifaceCnt-pon">0</span></button>
+        <button class="iface-tab-btn" data-key="onu" onclick="setIfaceTab('onu')">ONU<span class="cnt" id="ifaceCnt-onu">0</span></button>
+        <button class="iface-tab-btn" data-key="vlan" onclick="setIfaceTab('vlan')">VLAN Interface<span class="cnt" id="ifaceCnt-vlan">0</span></button>
+      </div>
+      <div id="devModalIfaceWrap">
+        <div class="iface-panel active" id="ifacePanel-uplink"><table class="iface-table"><thead><tr><th>Interface</th><th>Status</th><th>Rx bytes</th><th>Tx bytes</th></tr></thead><tbody id="devModalIfaceBody-uplink"></tbody></table><div class="iface-empty" id="ifaceEmpty-uplink" style="display:none">No uplink interfaces reported.</div></div>
+        <div class="iface-panel" id="ifacePanel-pon"><table class="iface-table"><thead><tr><th>Interface</th><th>Status</th><th>Rx bytes</th><th>Tx bytes</th></tr></thead><tbody id="devModalIfaceBody-pon"></tbody></table><div class="iface-empty" id="ifaceEmpty-pon" style="display:none">No PON ports reported.</div></div>
+        <div class="iface-panel" id="ifacePanel-onu"><table class="iface-table"><thead><tr><th>Interface</th><th>Status</th><th>Rx bytes</th><th>Tx bytes</th></tr></thead><tbody id="devModalIfaceBody-onu"></tbody></table><div class="iface-empty" id="ifaceEmpty-onu" style="display:none">No ONUs reported.</div></div>
+        <div class="iface-panel" id="ifacePanel-vlan"><table class="iface-table"><thead><tr><th>Interface</th><th>Status</th><th>Rx bytes</th><th>Tx bytes</th></tr></thead><tbody id="devModalIfaceBody-vlan"></tbody></table><div class="iface-empty" id="ifaceEmpty-vlan" style="display:none">No VLAN interfaces reported.</div></div>
+      </div>
       <div class="modal-actions">
         <button class="btn" onclick="refreshDeviceModal()">Refresh now</button>
         <button class="btn secondary" onclick="closeDeviceModal()">Close</button>
@@ -803,6 +822,20 @@ def _build_html() -> str:
       }, 50);
     }
     let currentModalHost = null;
+    let currentIfaceTab = 'uplink';
+    function setIfaceTab(key){
+      currentIfaceTab = key;
+      document.querySelectorAll('#ifaceTabbar .iface-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.key === key));
+      document.querySelectorAll('.iface-panel').forEach(p => p.classList.toggle('active', p.id === 'ifacePanel-' + key));
+    }
+    function classifyIface(name){
+      const n = String(name || '').toLowerCase();
+      if (n.includes('vlan')) return 'vlan';
+      if (n.includes('onu')) return 'onu';
+      if (n.includes('pon') || n.includes('olt')) return 'pon';
+      if (/^(uplink|wan|trunk|ge|gi|xge|xe|te|ether|fastethernet|eth)/.test(n)) return 'uplink';
+      return 'uplink';
+    }
     function ifaceBadgeClass(status){
       const s = String(status || '').toLowerCase();
       if (s === 'up') return 'up';
@@ -823,8 +856,15 @@ def _build_html() -> str:
       const title = document.getElementById("devModalTitle");
       const subtitle = document.getElementById("devModalSubtitle");
       const meta = document.getElementById("devModalMeta");
-      const body = document.getElementById("devModalIfaceBody");
       const note = document.getElementById("devModalIfaceNote");
+      const groupKeys = ['uplink', 'pon', 'onu', 'vlan'];
+      const bodies = {};
+      const empties = {};
+      groupKeys.forEach(k => {
+        bodies[k] = document.getElementById('devModalIfaceBody-' + k);
+        empties[k] = document.getElementById('ifaceEmpty-' + k);
+        if (bodies[k]) bodies[k].innerHTML = '';
+      });
       title.textContent = item.host || currentModalHost || 'Device';
       let statusLabel = 'checking...'; let statusColor = 'var(--warn)';
       if (item.reachable === true) { statusLabel = 'online'; statusColor = 'var(--good)'; }
@@ -838,7 +878,6 @@ def _build_html() -> str:
       ].filter(Boolean);
       meta.innerHTML = chips.map(c => `<span class="pill">${c}</span>`).join('');
       const ifaces = Array.isArray(item.interfaces) && item.interfaces.length ? item.interfaces : (Array.isArray(item.open_ports) ? item.open_ports : []);
-      body.innerHTML = '';
       if (!ifaces.length) {
         note.textContent = item.probe_error ? `Could not read interfaces: ${item.probe_error}` : 'No interface data yet — click "Refresh now" to probe this device.';
       } else {
@@ -848,15 +887,25 @@ def _build_html() -> str:
           const status = typeof p === 'object' ? (p.status || '-') : '-';
           const rx = typeof p === 'object' ? (p['rx-byte'] ?? p.rx_byte ?? p.rx ?? 0) : 0;
           const tx = typeof p === 'object' ? (p['tx-byte'] ?? p.tx_byte ?? p.tx ?? 0) : 0;
+          const group = (typeof p === 'object' && p.iface_group) ? p.iface_group : classifyIface(name);
+          const key = groupKeys.includes(group) ? group : 'uplink';
           const tr = document.createElement('tr');
           tr.innerHTML = `<td><strong>${name}</strong></td><td><span class="iface-badge ${ifaceBadgeClass(status)}">${status}</span></td><td>${fmtBytes(rx)}</td><td>${fmtBytes(tx)}</td>`;
-          body.appendChild(tr);
+          if (bodies[key]) bodies[key].appendChild(tr);
         });
       }
+      groupKeys.forEach(k => {
+        const count = bodies[k] ? bodies[k].children.length : 0;
+        const cntEl = document.getElementById('ifaceCnt-' + k);
+        if (cntEl) cntEl.textContent = String(count);
+        if (empties[k]) empties[k].style.display = count ? 'none' : '';
+      });
+      setIfaceTab(currentIfaceTab);
     }
     function openDeviceModal(host){
       if (!host) return;
       currentModalHost = host;
+      currentIfaceTab = 'uplink';
       const item = (window.__deviceByHost || {})[host] || { host };
       renderDeviceModal(item);
       document.getElementById("deviceModal").classList.add("open");
