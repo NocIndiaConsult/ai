@@ -18,13 +18,67 @@ try:
 except Exception:  # pragma: no cover
     paramiko = None
 
+import asyncio
+
 try:
-    from pysnmp.hlapi import CommunityData, ContextData, ObjectIdentity, ObjectType, SnmpEngine, UdpTransportTarget, getCmd, nextCmd
+    # pysnmp 6.x/7.x (current PyPI releases) - async-only hlapi.
+    from pysnmp.hlapi.v3arch.asyncio import (
+        CommunityData,
+        ContextData,
+        ObjectIdentity,
+        ObjectType,
+        SnmpEngine,
+        UdpTransportTarget,
+        get_cmd,
+        walk_cmd,
+    )
+    SNMP_MODE = "asyncio"
+    getCmd = nextCmd = None
 except Exception:  # pragma: no cover
     try:
-        from pysnmp.hlapi.v3arch import CommunityData, ContextData, ObjectIdentity, ObjectType, SnmpEngine, UdpTransportTarget, getCmd, nextCmd
+        # pysnmp <6 - classic synchronous hlapi (only importable on Python <3.12).
+        from pysnmp.hlapi import CommunityData, ContextData, ObjectIdentity, ObjectType, SnmpEngine, UdpTransportTarget, getCmd, nextCmd
+        SNMP_MODE = "sync"
+        get_cmd = walk_cmd = None
     except Exception:  # pragma: no cover
-        CommunityData = ContextData = ObjectIdentity = ObjectType = SnmpEngine = UdpTransportTarget = getCmd = nextCmd = None
+        CommunityData = ContextData = ObjectIdentity = ObjectType = SnmpEngine = UdpTransportTarget = None
+        getCmd = nextCmd = get_cmd = walk_cmd = None
+        SNMP_MODE = None
+
+
+async def _snmp_get_async(host: str, community: str, oid: str, timeout: float, retries: int) -> list[tuple[str, str]] | None:
+    transport = await UdpTransportTarget.create((host, 161), timeout=timeout, retries=retries)
+    error_indication, error_status, _error_index, var_binds = await get_cmd(
+        SnmpEngine(),
+        CommunityData(community, mpModel=1),
+        transport,
+        ContextData(),
+        ObjectType(ObjectIdentity(oid)),
+    )
+    if error_indication or error_status:
+        return None
+    return [(str(o), str(v)) for o, v in var_binds]
+
+
+async def _snmp_walk_async(host: str, community: str, oid: str, timeout: float, retries: int) -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = []
+    transport = await UdpTransportTarget.create((host, 161), timeout=timeout, retries=retries)
+    async for error_indication, error_status, _error_index, var_binds in walk_cmd(
+        SnmpEngine(),
+        CommunityData(community, mpModel=1),
+        transport,
+        ContextData(),
+        ObjectType(ObjectIdentity(oid)),
+        lexicographicMode=False,
+    ):
+        if error_indication or error_status:
+            break
+        for oid_obj, value_obj in var_binds:
+            full_oid = str(oid_obj)
+            if not full_oid.startswith(oid):
+                continue
+            rows.append((full_oid[len(oid):].lstrip("."), str(value_obj)))
+    return rows
 
 
 def ping_host(host: str, timeout_ms: int = 800) -> dict[str, Any]:
@@ -101,14 +155,23 @@ class LocalNetworkPoller:
             proto = self._norm(device.get("access_protocol") or device.get("protocol") or "auto").lower()
             vendor_family = self._norm(device.get("vendor_family") or device.get("vendor") or "").lower()
             model = self._norm(device.get("model") or "").lower()
+            has_creds = bool(self._norm(device.get("username")) and self._norm(device.get("password")))
+            vendor_model = " ".join([vendor_family, model])
             if proto == "auto":
-                if any(tag in " ".join([vendor_family, model]) for tag in ("mikrotik", "routeros")):
+                if any(tag in vendor_model for tag in ("mikrotik", "routeros")):
                     return "rest"
-                if any(tag in " ".join([vendor_family, model]) for tag in ("snmp", "olt", "cisco", "hpe", "tp-link", "d-link", "dbc", "syrotech", "genexis", "grandstream")):
+                if "cisco" in vendor_model:
+                    return "ssh_cisco" if has_creds else "snmp"
+                if any(tag in vendor_model for tag in ("hpe", "aruba", "comware")):
+                    return "ssh_hpe" if has_creds else "snmp"
+                # TP-Link, D-Link, Grandstream, DBC, Syrotech, Genexis and other
+                # OLT/switch vendors: standard SNMP (IF-MIB/BRIDGE-MIB) works
+                # broadly here without needing a vendor-specific CLI parser.
+                if any(tag in vendor_model for tag in ("snmp", "olt", "tp-link", "d-link", "dbc", "syrotech", "genexis", "grandstream")):
                     return "snmp"
-                if self._norm(device.get("username")) and self._norm(device.get("password")):
+                if has_creds:
                     return "ssh"
-                return "rest"
+                return "snmp"
             return proto
         return "auto"
 
@@ -334,52 +397,219 @@ class LocalNetworkPoller:
             )
         return {"host": host, "reachable": reachable or bool(output), "latency_ms": None, "ping_output": "ssh-snapshot", "device_type": "switch", "protocol": "ssh", "summary": {"ports": len(ports), "port_details": ports, "ports_down": len(down_ports), "ports_up": len(ports) - len(down_ports), "mac_table": mac_table, "note": "SSH snapshot collected."}, "alerts": alerts}
 
+    def _snmp_walk(self, host: str, community: str, oid: str, timeout: float = 2.0, retries: int = 1) -> list[tuple[str, str]]:
+        """Walks an SNMP subtree, returning (index_suffix, value) pairs so rows
+        can be correlated across separate walks (e.g. matching ifIndex between
+        ifDescr / ifOperStatus / ifInOctets). IF-MIB and BRIDGE-MIB are
+        standard MIBs supported by virtually every manageable switch, router,
+        and OLT regardless of vendor, which is what makes this path work
+        across Cisco, HPE, TP-Link, D-Link, Grandstream, and unbranded gear
+        without a vendor-specific parser."""
+        if SNMP_MODE == "asyncio":
+            try:
+                return asyncio.run(_snmp_walk_async(host, community, oid, timeout, retries))
+            except Exception:
+                return []
+        if SNMP_MODE == "sync" and nextCmd is not None:
+            rows: list[tuple[str, str]] = []
+            try:
+                iterator = nextCmd(
+                    SnmpEngine(),
+                    CommunityData(community, mpModel=1),
+                    UdpTransportTarget((host, 161), timeout=timeout, retries=retries),
+                    ContextData(),
+                    ObjectType(ObjectIdentity(oid)),
+                    lexicographicMode=False,
+                )
+                for error_indication, error_status, error_index, var_binds in iterator:
+                    if error_indication or error_status:
+                        break
+                    for var_bind in var_binds:
+                        oid_obj, value_obj = var_bind
+                        full_oid = str(oid_obj)
+                        if not full_oid.startswith(oid):
+                            continue
+                        rows.append((full_oid[len(oid):].lstrip("."), str(value_obj)))
+            except Exception:
+                pass
+            return rows
+        return []
+
+    def _snmp_get_ok(self, host: str, community: str, oid: str, timeout: float = 2.0, retries: int = 1) -> bool:
+        if SNMP_MODE == "asyncio":
+            try:
+                result = asyncio.run(_snmp_get_async(host, community, oid, timeout, retries))
+                return result is not None
+            except Exception:
+                return False
+        if SNMP_MODE == "sync" and getCmd is not None:
+            try:
+                iterator = getCmd(
+                    SnmpEngine(),
+                    CommunityData(community, mpModel=1),
+                    UdpTransportTarget((host, 161), timeout=timeout, retries=retries),
+                    ContextData(),
+                    ObjectType(ObjectIdentity(oid)),
+                )
+                for error_indication, error_status, error_index, var_binds in iterator:
+                    return not error_indication and not error_status
+            except Exception:
+                return False
+        return False
+
+    def _snmp_interface_table(self, host: str, community: str) -> dict[str, dict[str, Any]]:
+        table: dict[str, dict[str, Any]] = {}
+        for idx, name in self._snmp_walk(host, community, "1.3.6.1.2.1.2.2.1.2"):
+            table.setdefault(idx, {})["name"] = name.strip('"')
+        for idx, val in self._snmp_walk(host, community, "1.3.6.1.2.1.2.2.1.8"):
+            table.setdefault(idx, {})["oper_status"] = val
+        for idx, val in self._snmp_walk(host, community, "1.3.6.1.2.1.2.2.1.7"):
+            table.setdefault(idx, {})["admin_status"] = val
+        for idx, val in self._snmp_walk(host, community, "1.3.6.1.2.1.2.2.1.10"):
+            table.setdefault(idx, {})["in_octets"] = val
+        for idx, val in self._snmp_walk(host, community, "1.3.6.1.2.1.2.2.1.16"):
+            table.setdefault(idx, {})["out_octets"] = val
+        return table
+
+    def _snmp_mac_table(self, host: str, community: str, if_table: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
+        # BRIDGE-MIB: bridge port -> ifIndex, then the FDB table (indexed by
+        # the MAC's own 6 octets) gives MAC -> bridge port.
+        port_to_ifindex: dict[str, str] = dict(self._snmp_walk(host, community, "1.3.6.1.2.1.17.1.4.1.2"))
+        mac_entries: list[dict[str, str]] = []
+        for suffix, port_val in self._snmp_walk(host, community, "1.3.6.1.2.1.17.4.3.1.2"):
+            octets = suffix.split(".")
+            if len(octets) != 6:
+                continue
+            try:
+                mac = ":".join(f"{int(o):02x}" for o in octets)
+            except Exception:
+                continue
+            ifindex = port_to_ifindex.get(port_val.strip())
+            iface_name = if_table.get(ifindex, {}).get("name") if ifindex else None
+            if mac and iface_name:
+                mac_entries.append({"mac": mac.lower(), "interface": iface_name})
+        return mac_entries
+
     def _snmp_snapshot(self, device: dict[str, Any]) -> dict[str, Any]:
         host = self._device_host(device)
-        if getCmd is None:
+        if SNMP_MODE is None:
             return self.probe_host(host)
         community = self._norm(device.get("snmp_community") or "public")
-        ports: list[dict[str, Any]] = []
+        reachable = self._snmp_get_ok(host, community, "1.3.6.1.2.1.1.5.0")
+
+        if_table = self._snmp_interface_table(host, community) if reachable else {}
+        status_map = {"1": "up", "2": "down", "3": "testing", "4": "unknown", "5": "dormant", "6": "not_present", "7": "lower_layer_down"}
+        port_details: list[dict[str, Any]] = []
         down_ports: list[str] = []
-        reachable = False
-        try:
-            # sysName only first to validate SNMP
-            iterator = getCmd(
-                SnmpEngine(),
-                CommunityData(community, mpModel=0),
-                UdpTransportTarget((host, 161), timeout=2, retries=1),
-                ContextData(),
-                ObjectType(ObjectIdentity("1.3.6.1.2.1.1.5.0")),
-            )
-            for error_indication, error_status, error_index, var_binds in iterator:
-                if error_indication or error_status:
+        for idx, row in if_table.items():
+            name = row.get("name") or f"if{idx}"
+            oper = status_map.get(str(row.get("oper_status")), "unknown")
+            admin = status_map.get(str(row.get("admin_status")), "unknown")
+            status = "admin_down" if admin == "down" else oper
+            port_details.append({
+                "name": name,
+                "status": status,
+                "rx-byte": row.get("in_octets") or 0,
+                "tx-byte": row.get("out_octets") or 0,
+            })
+            if status in {"down", "admin_down"}:
+                down_ports.append(name)
+
+        mac_table = self._snmp_mac_table(host, community, if_table) if reachable else []
+
+        # Best-effort CPU via HOST-RESOURCES-MIB, which many (not all) vendors
+        # expose regardless of platform - harmless no-op if unsupported.
+        cpu_val = None
+        if reachable:
+            for _, val in self._snmp_walk(host, community, "1.3.6.1.2.1.25.3.3.1.2"):
+                try:
+                    cpu_val = float(val)
                     break
-                reachable = True
-            iterator = nextCmd(
-                SnmpEngine(),
-                CommunityData(community, mpModel=0),
-                UdpTransportTarget((host, 161), timeout=2, retries=1),
-                ContextData(),
-                ObjectType(ObjectIdentity("1.3.6.1.2.1.2.2.1.2")),
-                lexicographicMode=False,
-            )
-            for error_indication, error_status, error_index, var_binds in iterator:
-                if error_indication or error_status:
-                    break
-                for var_bind in var_binds:
-                    text = str(var_bind)
-                    if "=" not in text:
-                        continue
-                    _, value = text.split("=", 1)
-                    name = value.strip().strip('"')
-                    if not name:
-                        continue
-                    ports.append({"name": name, "status": "unknown", "raw": text})
-                    reachable = True
-        except Exception:
-            pass
-        alerts = []
-        return {"host": host, "reachable": reachable, "latency_ms": None, "ping_output": "snmp-snapshot", "device_type": "switch", "protocol": "snmp", "summary": {"ports": len(ports), "port_details": ports, "ports_down": len(down_ports), "ports_up": len(ports), "note": "SNMP snapshot collected."}, "alerts": alerts}
+                except Exception:
+                    continue
+
+        alerts: list[dict[str, Any]] = []
+        for name in down_ports:
+            alerts.append({
+                "event_type": "device.port_down",
+                "severity": "critical",
+                "host": host,
+                "port": name,
+                "summary": f"{host} port {name} is down",
+            })
+
+        summary: dict[str, Any] = {
+            "ports": len(port_details),
+            "port_details": port_details,
+            "ports_up": sum(1 for p in port_details if p.get("status") == "up"),
+            "ports_down": len(down_ports),
+            "ports_admin_down": len([p for p in port_details if p.get("status") == "admin_down"]),
+            "mac_table": mac_table,
+            "note": "SNMP snapshot via standard IF-MIB/BRIDGE-MIB - vendor agnostic.",
+        }
+        if cpu_val is not None:
+            summary["cpu"] = cpu_val
+        return {
+            "host": host,
+            "reachable": reachable,
+            "latency_ms": None,
+            "ping_output": "snmp-snapshot",
+            "device_type": "switch",
+            "protocol": "snmp",
+            "summary": summary,
+            "alerts": alerts,
+        }
+
+    def _cisco_ssh_snapshot(self, device: dict[str, Any]) -> dict[str, Any]:
+        # SNMP already gives vendor-agnostic ports/traffic/mac-table; SSH here
+        # only adds what SNMP can't reliably get on IOS: CPU and temperature.
+        snap = self._snmp_snapshot(device)
+        host = self._device_host(device)
+        username = self._norm(device.get("username"))
+        password = self._norm(device.get("password"))
+        if username and password:
+            try:
+                cpu_out = self._ssh_command(host, username, password, "show processes cpu | include five")
+                match = re.search(r"five minutes:\s*(\d+)%", cpu_out)
+                if match:
+                    snap.setdefault("summary", {})["cpu"] = float(match.group(1))
+            except Exception:
+                pass
+            try:
+                env_out = self._ssh_command(host, username, password, "show env temperature")
+                match = re.search(r"(-?\d+(?:\.\d+)?)\s*(?:C|Celsius|degrees)", env_out, re.IGNORECASE)
+                if match:
+                    snap.setdefault("summary", {})["temperature"] = match.group(1)
+            except Exception:
+                pass
+        snap["protocol"] = "ssh"
+        snap.setdefault("summary", {})["note"] = "Cisco: SNMP (ports/traffic/MAC) + SSH (CPU/temperature) hybrid."
+        return snap
+
+    def _hpe_ssh_snapshot(self, device: dict[str, Any]) -> dict[str, Any]:
+        # Same hybrid approach for HPE Comware/ArubaOS-CX gear.
+        snap = self._snmp_snapshot(device)
+        host = self._device_host(device)
+        username = self._norm(device.get("username"))
+        password = self._norm(device.get("password"))
+        if username and password:
+            try:
+                cpu_out = self._ssh_command(host, username, password, "display cpu-usage")
+                match = re.search(r"CPU usage:\s*(\d+)%", cpu_out) or re.search(r"(\d+)%", cpu_out)
+                if match:
+                    snap.setdefault("summary", {})["cpu"] = float(match.group(1))
+            except Exception:
+                pass
+            try:
+                env_out = self._ssh_command(host, username, password, "display environment")
+                match = re.search(r"Temperature.*?(-?\d+(?:\.\d+)?)", env_out, re.IGNORECASE | re.DOTALL)
+                if match:
+                    snap.setdefault("summary", {})["temperature"] = match.group(1)
+            except Exception:
+                pass
+        snap["protocol"] = "ssh"
+        snap.setdefault("summary", {})["note"] = "HPE: SNMP (ports/traffic/MAC) + SSH (CPU/temperature) hybrid."
+        return snap
 
     def probe_host(self, host: str) -> dict[str, Any]:
         ping = ping_host(host)
@@ -427,6 +657,18 @@ class LocalNetworkPoller:
                     protocol = "rest" if any(tag in " ".join([self._norm(device.get("vendor_family")), self._norm(device.get("vendor")), self._norm(device.get("model"))]).lower() for tag in ("mikrotik", "routeros")) else "snmp"
             if protocol == "rest":
                 snap = self._mikrotik_rest_snapshot(device)
+                snap["reachable"] = bool(snap.get("reachable")) or bool(reach.get("reachable"))
+                snap["latency_ms"] = reach.get("latency_ms")
+                snap["ping_output"] = reach.get("ping_output") or snap.get("ping_output")
+                return snap
+            if protocol == "ssh_cisco":
+                snap = self._cisco_ssh_snapshot(device)
+                snap["reachable"] = bool(snap.get("reachable")) or bool(reach.get("reachable"))
+                snap["latency_ms"] = reach.get("latency_ms")
+                snap["ping_output"] = reach.get("ping_output") or snap.get("ping_output")
+                return snap
+            if protocol == "ssh_hpe":
+                snap = self._hpe_ssh_snapshot(device)
                 snap["reachable"] = bool(snap.get("reachable")) or bool(reach.get("reachable"))
                 snap["latency_ms"] = reach.get("latency_ms")
                 snap["ping_output"] = reach.get("ping_output") or snap.get("ping_output")
