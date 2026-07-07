@@ -305,14 +305,28 @@ class WindowsAgent:
             device_entry = devices_by_host.get(host)
             if host and device_entry is not None:
                 probe_summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}
-                device_entry["reachable"] = bool(result.get("reachable"))
+                is_reachable = bool(result.get("reachable"))
+                device_entry["reachable"] = is_reachable
                 device_entry["latency_ms"] = result.get("latency_ms")
                 device_entry["protocol"] = result.get("protocol") or device_entry.get("access_protocol")
-                device_entry["open_ports"] = probe_summary.get("port_details") or device_entry.get("open_ports") or []
-                device_entry["interfaces"] = device_entry["open_ports"]
-                device_entry["summary"] = probe_summary
+                if is_reachable:
+                    device_entry["open_ports"] = probe_summary.get("port_details") or []
+                    device_entry["interfaces"] = device_entry["open_ports"]
+                    device_entry["summary"] = probe_summary
+                    device_entry.pop("offline_reason", None)
+                else:
+                    # Never show stale interfaces from an older successful
+                    # poll when the latest live probe says the host is down.
+                    device_entry["open_ports"] = []
+                    device_entry["interfaces"] = []
+                    device_entry["summary"] = {
+                        "ports": 0,
+                        "port_details": [],
+                        "note": "Latest local poll says this device is unreachable.",
+                    }
+                    device_entry["offline_reason"] = result.get("ping_output") or "Host unreachable from this agent"
                 device_entry["last_probed_at"] = utc_now()
-                if result.get("reachable"):
+                if is_reachable:
                     device_entry["last_seen"] = utc_now()
                 if result.get("probe_error"):
                     device_entry["probe_error"] = result.get("probe_error")
@@ -340,11 +354,12 @@ class WindowsAgent:
                 alerts.append(
                     {
                         "event_type": "local.connectivity_loss",
-                        "severity": "warning",
+                        "severity": "critical",
                         "host": result.get("host"),
                         "summary": f"{result.get('host')} unreachable",
                         "reachability": result.get("reachable"),
                         "latency_ms": result.get("latency_ms"),
+                        "reason": result.get("ping_output") or "Host unreachable from this agent",
                     }
                 )
             alerts.extend(self._detect_device_health_alerts(str(result.get("host") or ""), result))
@@ -368,14 +383,26 @@ class WindowsAgent:
             if not result:
                 continue
             probe_summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}
-            device_entry["reachable"] = bool(result.get("reachable"))
+            is_reachable = bool(result.get("reachable"))
+            device_entry["reachable"] = is_reachable
             device_entry["latency_ms"] = result.get("latency_ms")
             device_entry["protocol"] = result.get("protocol") or device_entry.get("access_protocol")
-            device_entry["open_ports"] = probe_summary.get("port_details") or device_entry.get("open_ports") or []
-            device_entry["interfaces"] = device_entry["open_ports"]
-            device_entry["summary"] = probe_summary
+            if is_reachable:
+                device_entry["open_ports"] = probe_summary.get("port_details") or []
+                device_entry["interfaces"] = device_entry["open_ports"]
+                device_entry["summary"] = probe_summary
+                device_entry.pop("offline_reason", None)
+            else:
+                device_entry["open_ports"] = []
+                device_entry["interfaces"] = []
+                device_entry["summary"] = {
+                    "ports": 0,
+                    "port_details": [],
+                    "note": "Latest local poll says this device is unreachable.",
+                }
+                device_entry["offline_reason"] = result.get("ping_output") or "Host unreachable from this agent"
             device_entry["last_probed_at"] = utc_now()
-            if result.get("reachable"):
+            if is_reachable:
                 device_entry["last_seen"] = utc_now()
         alerts.extend(self._detect_network_loop_alerts(results))
         self.last_local_inventory = results
@@ -634,8 +661,11 @@ class WindowsAgent:
             if key:
                 active[key] = {**item, "resolved": bool(item.get("resolved"))}
         down_map: dict[str, set[str]] = {}
+        reachable_map: dict[str, bool] = {}
         for result in results:
             host = str(result.get("host") or "").strip()
+            if host:
+                reachable_map[host] = bool(result.get("reachable"))
             summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}
             down_ports = summary.get("port_details") if isinstance(summary, dict) else []
             ports_down: set[str] = set()
@@ -657,7 +687,16 @@ class WindowsAgent:
             active[key] = current
         for key, item in list(active.items()):
             host = str(item.get("host") or "").strip()
+            event_type = str(item.get("event_type") or item.get("issue") or item.get("kind") or "").strip()
             port = str(item.get("port") or "").strip()
+            if event_type == "local.connectivity_loss" and host:
+                if reachable_map.get(host) is True:
+                    item = {**item, "resolved": True, "resolved_at": utc_now()}
+                    active[key] = item
+                else:
+                    item = {**item, "resolved": False}
+                    active[key] = item
+                continue
             if host and port:
                 live_ports = down_map.get(host, set())
                 if port not in live_ports:
@@ -845,7 +884,7 @@ class WindowsAgent:
 
 def load_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Idea Agent Windows Client")
-    parser.add_argument("--server", required=False, default=os.environ.get("IDEA_AGENT_SERVER", "http://127.0.0.1:8000"))
+    parser.add_argument("--server", required=False, default=os.environ.get("IDEA_AGENT_SERVER", "http://13.234.37.216"))
     parser.add_argument("--company-id", required=False, type=int, default=int(os.environ.get("IDEA_AGENT_COMPANY_ID", "1")))
     parser.add_argument("--name", required=False, default=os.environ.get("IDEA_AGENT_NAME", hostname()))
     parser.add_argument("--agent-id", required=False, type=int, default=None)

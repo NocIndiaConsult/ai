@@ -29,6 +29,8 @@ class ServerClient:
         headers["X-Company-ID"] = str(int(getattr(settings, "company_id", 1) or 1))
         if settings.agent_key:
             headers["X-Agent-Key"] = settings.agent_key
+        if getattr(settings, "auth_token", None):
+            headers["Authorization"] = f"Bearer {settings.auth_token}"
         return headers
 
     def _request(self, method: str, url: str, payload: dict[str, Any] | None = None, headers: dict[str, str] | None = None) -> dict[str, Any]:
@@ -41,6 +43,16 @@ class ServerClient:
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
             raw = resp.read().decode("utf-8")
             return json.loads(raw) if raw else {}
+
+    def login(self, settings: AgentSettings, username: str, password: str, company_code: str | None = None, server_url: str | None = None) -> dict[str, Any]:
+        base_url = (server_url or settings.server_url).rstrip("/")
+        url = f"{base_url}/api/auth/login"
+        payload = {
+            "username": username.strip(),
+            "password": password,
+            "company_code": company_code.strip() if company_code else None,
+        }
+        return self._request("POST", url, payload, {"Content-Type": "application/json"})
 
     def register(self, settings: AgentSettings) -> AgentSettings:
         url = f"{settings.server_url.rstrip('/')}/api/agent/register"

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields as dataclass_fields
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -19,6 +19,10 @@ class AgentSettings:
     name: str
     agent_id: int | None = None
     agent_key: str | None = None
+    auth_token: str | None = None
+    auth_username: str | None = None
+    auth_role: str | None = None
+    company_code: str | None = None
     model_version: str = "1"
     offline_mode: bool = True
     site_name: str | None = None
@@ -127,7 +131,9 @@ class LocalCache:
         raw = self.get_setting("profile")
         if not raw:
             return None
-        return AgentSettings(**raw)
+        valid_fields = {item.name for item in dataclass_fields(AgentSettings)}
+        filtered = {key: value for key, value in raw.items() if key in valid_fields}
+        return AgentSettings(**filtered)
 
     def enqueue_command(self, command_type: str, payload: dict[str, Any]) -> int:
         now = _utc_now()
@@ -342,6 +348,7 @@ class LocalCache:
                     "last_probed_at": item.get("last_probed_at"),
                     "probe_error": item.get("probe_error"),
                     "summary": item.get("summary") if isinstance(item.get("summary"), dict) else {},
+                    "onu_profiles": item.get("onu_profiles") if isinstance(item.get("onu_profiles"), list) else [],
                 }
             )
         return devices
@@ -379,6 +386,7 @@ class LocalCache:
                     "last_probed_at": item.get("last_probed_at"),
                     "probe_error": item.get("probe_error"),
                     "summary": item.get("summary") if isinstance(item.get("summary"), dict) else {},
+                    "onu_profiles": item.get("onu_profiles") if isinstance(item.get("onu_profiles"), list) else [],
                 }
             )
         self.save_setting("local_devices", cleaned)

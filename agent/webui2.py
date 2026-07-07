@@ -41,6 +41,20 @@ def _text_response(handler: BaseHTTPRequestHandler, html: str, status: int = 200
     handler.wfile.write(raw)
 
 
+def _host_key(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if "://" in raw:
+        parsed = urlparse(raw)
+        raw = parsed.hostname or raw
+    if "/" in raw:
+        raw = raw.split("/", 1)[0]
+    if ":" in raw and raw.count(":") == 1:
+        raw = raw.split(":", 1)[0]
+    return raw.strip().lower()
+
+
 def _build_html() -> str:
     return """<!doctype html>
 <html lang="en">
@@ -214,13 +228,46 @@ def _build_html() -> str:
     .iface-badge.admin_down{background:rgba(255,184,77,.14);color:var(--warn)}
     .iface-badge.unknown{background:rgba(255,255,255,.08);color:var(--muted)}
     .modal-actions{display:flex;gap:10px;margin-top:16px}
+    .onu-config{margin-top:18px;padding:16px;border-radius:18px;background:rgba(79,124,255,.06);border:1px solid rgba(79,124,255,.15)}
+    .onu-config h4{margin:0 0 4px;font-size:15px}
+    .onu-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+    .onu-plan{margin-top:12px;padding:12px;border-radius:14px;background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.07);max-height:220px;overflow:auto}
+    .login-screen{position:fixed;inset:0;z-index:2000;display:grid;place-items:center;padding:24px;background:
+      radial-gradient(circle at 20% 20%, rgba(101,114,255,.20), transparent 30%),
+      radial-gradient(circle at 80% 10%, rgba(139,92,246,.18), transparent 32%),
+      linear-gradient(180deg,#050812 0%,#070c18 100%)}
+    .login-screen.hidden{display:none}
+    .login-card{width:min(500px,100%);padding:28px;border-radius:26px;background:linear-gradient(180deg,rgba(13,20,38,.98),rgba(8,13,27,.99));border:1px solid rgba(255,255,255,.09);box-shadow:0 30px 90px rgba(0,0,0,.52)}
+    .login-brand{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+    .login-brand h1{margin:0;font-size:24px;letter-spacing:-.03em}
+    .login-brand p{margin:4px 0 0;color:var(--muted);font-size:13px}
+    .login-grid{display:grid;gap:12px}
+    .login-status{min-height:20px;color:#ffb4bd;font-size:12px;line-height:1.45}
+    .login-demo{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 12px;border-radius:14px;background:rgba(101,114,255,.10);border:1px solid rgba(101,114,255,.20);color:#cfd8ff;font-size:12px}
+    .shell.locked{display:none}
     @media (max-width: 1360px){.grid6{grid-template-columns:repeat(3,minmax(0,1fr))}.layout{grid-template-columns:1fr}.quick-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
     @media (max-width: 980px){body{overflow:auto}.shell{grid-template-columns:1fr}.side{border-right:none;border-bottom:1px solid rgba(255,255,255,.06)}.grid6{grid-template-columns:repeat(2,minmax(0,1fr))}.subgrid4,.quick-grid{grid-template-columns:1fr}.topbar{flex-direction:column}.top-actions{width:100%;justify-content:flex-start}.searchbar{max-width:none;width:100%}}
     @media (max-width: 760px){.grid6,.subgrid4,.quick-grid,.two{grid-template-columns:1fr}.row{grid-template-columns:1fr}.main{padding:16px}.side{padding:16px}.topology-wrap svg{height:260px}}
   </style>
 </head>
 <body>
-  <div class="shell">
+  <div class="login-screen" id="loginScreen">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="logo">IA</div>
+        <div><h1>Idea Agent Login</h1><p>Server authenticated access for this company workspace</p></div>
+      </div>
+      <div class="login-grid">
+        <input class="input" id="loginCompanyCode" placeholder="Company code (optional)"/>
+        <input class="input" id="loginUsername" placeholder="Username"/>
+        <input class="input" id="loginPassword" placeholder="Password" type="password" onkeydown="if(event.key==='Enter') loginAgent()"/>
+        <div class="login-demo"><span>Demo login</span><strong>admin / admin</strong></div>
+        <button class="btn" onclick="loginAgent()">Login & Open Agent</button>
+        <div class="login-status" id="loginStatus"></div>
+      </div>
+    </div>
+  </div>
+  <div class="shell locked" id="appShell">
     <aside class="side">
       <div class="brand"><div class="logo">IA</div><div><h1>Idea Agent</h1><p>Network AI Assistant</p></div></div>
       <div class="nav" id="nav"></div>
@@ -346,7 +393,7 @@ def _build_html() -> str:
       <section class="tabs" id="tab-automation"><div class="card"><div class="section-title"><div><h3>Automation</h3><span>Smart automation and policy control</span></div></div><div class="stack"><div class="pill">Safe remediation policies</div><div class="pill">Rollback-ready plan engine</div><div class="pill">Auto-remediation queue bindings</div></div></div></section>
       <section class="tabs" id="tab-reports"><div class="card"><div class="section-title"><div><h3>Reports</h3><span>Generate network reports</span></div></div><div class="stack"><div class="pill">Operational summaries</div><div class="pill">Health trends and incident reports</div><div class="pill">Exportable customer snapshots</div></div></div></section>
       <section class="tabs" id="tab-onprem"><div class="card"><div class="section-title"><div><h3>On-Prem Polling</h3><span>Local network scan</span></div></div><div class="stack"><div class="pill">Scan status: <strong id="scanStatus">Idle</strong></div><div class="pill">Targets count: <strong id="scanTargets">0</strong></div><div class="pill">Online hosts: <strong id="scanOnline">0</strong></div></div><div style="height:12px"></div><div class="list" id="inventoryList"></div></div></section>
-      <section class="tabs" id="tab-settings"><div class="two"><div class="card"><div class="section-title"><div><h3>Settings</h3><span>Agent config</span></div></div><div class="stack"><input class="input" id="serverUrl" placeholder="Server URL"/><input class="input" id="companyId" placeholder="Company ID"/><input class="input" id="agentNameInput" placeholder="Agent Name"/><input class="input" id="discoveryCidr" placeholder="Discovery CIDR"/><input class="input" id="localTargets" placeholder="Local targets (comma separated)"/><div class="flex"><button class="btn" onclick="saveSettings()">Save</button><button class="btn secondary" onclick="action('sync')">Resync</button></div></div></div><div class="card"><div class="section-title"><div><h3>Snapshot</h3><span>Local runtime</span></div></div><pre id="snapshotBox">-</pre></div></div></section>
+      <section class="tabs" id="tab-settings"><div class="two"><div class="card"><div class="section-title"><div><h3>Settings</h3><span>Agent config</span></div></div><div class="stack"><input type="hidden" id="serverUrl"/><div class="pill">Cloud server is managed by provider and connected automatically.</div><input class="input" id="companyId" placeholder="Company ID"/><input class="input" id="agentNameInput" placeholder="Agent Name"/><input class="input" id="discoveryCidr" placeholder="Discovery CIDR"/><input class="input" id="localTargets" placeholder="Local targets (comma separated)"/><div class="flex"><button class="btn" onclick="saveSettings()">Save</button><button class="btn secondary" onclick="action('sync')">Resync</button></div></div></div><div class="card"><div class="section-title"><div><h3>Snapshot</h3><span>Local runtime</span></div></div><pre id="snapshotBox">-</pre></div></div></section>
     </main>
   </div>
   <div class="modal-overlay" id="deviceModal" onclick="if(event.target===this) closeDeviceModal()">
@@ -420,6 +467,17 @@ def _build_html() -> str:
     const navItems = [["dashboard","Dashboard","▦"],["devices","Devices","🖥"],["diagnose","Diagnose","🩺"],["topology","Topology","⎇"],["alerts","Alerts","🔔"],["ai","AI Assistant","✦"],["commands","Commands","⌘"],["automation","Automation","⚙"],["reports","Reports","▲"],["settings","Settings","⛭"]];
     const state = {tab:"dashboard",payload:{}};
     let lastMergedDevices = [];
+    let authReady = false;
+    function hostKey(value){
+      let raw = String(value || "").trim();
+      if (!raw) return "";
+      try {
+        if (raw.includes("://")) raw = new URL(raw).hostname || raw;
+      } catch(e) {}
+      if (raw.includes("/")) raw = raw.split("/")[0];
+      if ((raw.match(/:/g) || []).length === 1) raw = raw.split(":")[0];
+      return raw.trim().toLowerCase();
+    }
     const nav = document.getElementById("nav");
     navItems.forEach(([key,label,icon]) => {
       const b = document.createElement("button");
@@ -457,6 +515,42 @@ def _build_html() -> str:
       if (h > 0) return `${h}h ${m}m`;
       return `${m}m ${s % 60}s`;
     }
+    function applyAuthGate(d){
+      const loggedIn = !!(d.auth && d.auth.logged_in);
+      authReady = loggedIn;
+      const loginScreen = document.getElementById("loginScreen");
+      const appShell = document.getElementById("appShell");
+      if (loginScreen) loginScreen.classList.toggle("hidden", loggedIn);
+      if (appShell) appShell.classList.toggle("locked", !loggedIn);
+      const loginCompany = document.getElementById("loginCompanyCode");
+      const loginUser = document.getElementById("loginUsername");
+      if (loginCompany && !loginCompany.value) loginCompany.value = d.auth?.company_code || "";
+      if (loginUser && !loginUser.value) loginUser.value = d.auth?.username || "admin";
+      return loggedIn;
+    }
+    async function loginAgent(){
+      const status = document.getElementById("loginStatus");
+      const payload = {
+        company_code: document.getElementById("loginCompanyCode").value.trim(),
+        username: document.getElementById("loginUsername").value.trim(),
+        password: document.getElementById("loginPassword").value
+      };
+      if (status) status.textContent = "Checking login with server...";
+      try {
+        const res = await fetch('/api/auth/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) throw new Error(data.error || data.detail || `Login failed (${res.status})`);
+        if (status) status.textContent = "Login successful. Opening agent...";
+        setTimeout(load, 150);
+      } catch (e) {
+        if (status) status.textContent = e.message || String(e);
+      }
+    }
+    async function logoutAgent(){
+      await fetch('/api/auth/logout', {method:'POST'});
+      authReady = false;
+      await load();
+    }
     function renderTopology(devices){
       const svg = document.getElementById("topologySvg");
       if (!svg) return;
@@ -493,17 +587,19 @@ def _build_html() -> str:
       const res = await fetch('/api/state');
       state.payload = await res.json();
       const d = state.payload;
+      if (!applyAuthGate(d)) return;
       try {
         const remote = await fetch('/api/agent/devices').then(r => r.ok ? r.json() : null);
-        if (remote && Array.isArray(remote.devices) && remote.devices.length) {
-          d.inventory = remote.devices.map(item => ({
+        if ((!d.inventory || !d.inventory.length) && remote && Array.isArray(remote.devices) && remote.devices.length) {
+          d.local_devices = remote.devices.map(item => ({
             host: item.mgmt_ip || item.host,
-            latency_ms: item.latency_ms ?? item.ping_ms ?? null,
-            reachable: item.reachable ?? item.is_reachable ?? null,
-            open_ports: item.open_ports || [],
+            latency_ms: null,
+            reachable: null,
+            open_ports: [],
+            interfaces: [],
             last_seen: item.last_seen || item.updated_at || null,
             type: item.device_type || item.vendor_family || item.vendor || 'device',
-            source: 'live'
+            source: 'server'
           }));
         }
       } catch (e) {}
@@ -571,7 +667,8 @@ def _build_html() -> str:
       const liveInventory = new Map();
       (d.inventory || []).forEach(item => {
         const host = String(item.host || item.mgmt_ip || "").trim();
-        if (host) liveInventory.set(host, item);
+        const key = hostKey(host);
+        if (key) liveInventory.set(key, item);
       });
       const targets = (d.local_devices || d.local_targets || []).map(item => typeof item === 'string' ? ({ host: item, source: "saved", reachable: null, latency_ms: null, open_ports: [], interfaces: [], last_seen: null, type: "saved target" }) : ({
         host: item.host || item.mgmt_ip,
@@ -599,27 +696,28 @@ def _build_html() -> str:
       const seenHosts = new Set();
       targets.forEach(item => {
         const host = String(item.host || "").trim();
-        if (!host || seenHosts.has(host)) return;
-        seenHosts.add(host);
-        const live = liveInventory.get(host);
+        const key = hostKey(host);
+        if (!key || seenHosts.has(key)) return;
+        seenHosts.add(key);
+        const live = liveInventory.get(key);
         if (live) {
           mergedDevices.push({
             ...item,
             source: "live",
             reachable: live.reachable ?? item.reachable ?? null,
             latency_ms: live.latency_ms ?? item.latency_ms ?? null,
-            open_ports: (live.open_ports && live.open_ports.length) ? live.open_ports : item.open_ports,
-            interfaces: (live.interfaces && live.interfaces.length) ? live.interfaces : item.interfaces,
+            open_ports: Array.isArray(live.open_ports) ? live.open_ports : [],
+            interfaces: Array.isArray(live.interfaces) ? live.interfaces : [],
             last_seen: live.last_seen || item.last_seen || null,
           });
         } else {
           mergedDevices.push(item);
         }
       });
-      liveInventory.forEach((item, host) => {
-        if (seenHosts.has(host)) return;
-        seenHosts.add(host);
-        mergedDevices.push({ ...item, host, source: "live" });
+      liveInventory.forEach((item, key) => {
+        if (seenHosts.has(key)) return;
+        seenHosts.add(key);
+        mergedDevices.push({ ...item, host: item.host || item.mgmt_ip || key, source: "live" });
       });
       const totalDeviceCount = mergedDevices.length;
       const onlineDeviceCount = mergedDevices.filter(item => item.reachable === true).length;
@@ -1041,6 +1139,46 @@ class AgentUI:
         latencies = [float(item.get("latency_ms")) for item in inventory if isinstance(item, dict) and item.get("latency_ms") is not None]
         if latencies:
             avg_latency = round(sum(latencies) / len(latencies), 1)
+        inventory_by_host = {
+            _host_key(item.get("host") or item.get("mgmt_ip")): item
+            for item in inventory
+            if isinstance(item, dict) and _host_key(item.get("host") or item.get("mgmt_ip"))
+        }
+        live_local_devices: list[dict[str, Any]] = []
+        for item in list(getattr(self.settings, "local_devices", []) or []):
+            if not isinstance(item, dict):
+                continue
+            host = str(item.get("host") or item.get("mgmt_ip") or "").strip()
+            if not host:
+                continue
+            live = inventory_by_host.get(_host_key(host))
+            base = {**item, "host": host, "mgmt_ip": host}
+            if isinstance(live, dict):
+                summary = live.get("summary") if isinstance(live.get("summary"), dict) else {}
+                is_reachable = bool(live.get("reachable"))
+                base["reachable"] = is_reachable
+                base["latency_ms"] = live.get("latency_ms")
+                base["protocol"] = live.get("protocol") or base.get("access_protocol")
+                base["last_probed_at"] = live.get("observed_at") or base.get("last_probed_at")
+                if is_reachable:
+                    ports = summary.get("port_details") if isinstance(summary.get("port_details"), list) else []
+                    base["open_ports"] = ports
+                    base["interfaces"] = ports
+                    base["summary"] = summary
+                else:
+                    base["open_ports"] = []
+                    base["interfaces"] = []
+                    base["summary"] = {"ports": 0, "port_details": [], "note": "Latest live poll says this device is unreachable."}
+                    base["offline_reason"] = live.get("ping_output") or "Host unreachable from this agent"
+            else:
+                # Saved workspace data is not a live status. Never expose old
+                # online/interface values from cache as current truth.
+                base["reachable"] = None
+                base["latency_ms"] = None
+                base["open_ports"] = []
+                base["interfaces"] = []
+                base["summary"] = {"ports": 0, "port_details": [], "note": "Waiting for the next live local poll."}
+            live_local_devices.append(base)
         critical_alerts = sum(1 for item in (self.agent.last_local_alerts or []) if str(item.get("severity") or "").lower() == "critical")
         total_probed = reachable + unreachable
         reachability_pct = round((reachable / total_probed) * 100, 1) if total_probed else None
@@ -1050,12 +1188,19 @@ class AgentUI:
             "server_url": self.settings.server_url,
             "company_id": self.settings.company_id,
             "agent_name": self.settings.name,
+            "auth": {
+                "logged_in": bool(getattr(self.settings, "auth_token", None)),
+                "username": getattr(self.settings, "auth_username", None),
+                "role": getattr(self.settings, "auth_role", None),
+                "company_id": getattr(self.settings, "company_id", None),
+                "company_code": getattr(self.settings, "company_code", None),
+            },
             "model_version": self.settings.model_version,
             "queue_depth": queue_depth,
             "last_sync_at": self.agent.last_sync_at,
             "last_error": self.cache.get_last_error(),
             "local_targets": list(getattr(self.settings, "local_targets", []) or []),
-            "local_devices": list(getattr(self.settings, "local_devices", []) or []),
+            "local_devices": live_local_devices,
             "discovery_cidr": getattr(self.settings, "discovery_cidr", None),
             "last_discovery_at": self.agent.last_discovery_at,
             "model_cache_present": self.cache.latest_model_bundle() is not None,
@@ -1119,6 +1264,45 @@ class AgentUI:
                 length = int(self.headers.get("Content-Length", "0") or "0")
                 body = self.rfile.read(length).decode("utf-8") if length else "{}"
                 data = json.loads(body or "{}")
+                if parsed.path == "/api/auth/login":
+                    try:
+                        username = str(data.get("username") or "").strip()
+                        password = str(data.get("password") or "")
+                        server_url = str(data.get("server_url") or parent.settings.server_url or "").strip().rstrip("/")
+                        company_code = str(data.get("company_code") or "").strip()
+                        if not server_url:
+                            _json_response(self, {"ok": False, "error": "Server URL is required"}, 400); return
+                        if not username or not password:
+                            _json_response(self, {"ok": False, "error": "Username and password are required"}, 400); return
+                        login_result = parent.client.login(parent.settings, username, password, company_code or None, server_url)
+                        if not login_result.get("success"):
+                            _json_response(self, {"ok": False, "error": login_result.get("detail") or "Login failed"}, 401); return
+                        parent.settings.server_url = server_url
+                        parent.settings.company_id = int(login_result.get("company_id") or parent.settings.company_id or 1)
+                        parent.settings.auth_token = str(login_result.get("token") or "")
+                        parent.settings.auth_username = str(login_result.get("username") or username)
+                        parent.settings.auth_role = str(login_result.get("role") or "user")
+                        parent.settings.company_code = company_code or None
+                        parent.cache.save_agent_profile(parent.settings)
+                        registration_warning = None
+                        try:
+                            if not parent.settings.agent_id or not parent.settings.agent_key:
+                                parent.client.register(parent.settings)
+                        except Exception as exc:
+                            registration_warning = str(exc)
+                        try:
+                            parent.agent.request_sync_once()
+                        except Exception:
+                            pass
+                        _json_response(self, {"ok": True, "auth": parent._state_payload().get("auth"), "registration_warning": registration_warning}); return
+                    except Exception as exc:
+                        _json_response(self, {"ok": False, "error": str(exc)}, 401); return
+                if parsed.path == "/api/auth/logout":
+                    parent.settings.auth_token = None
+                    parent.settings.auth_username = None
+                    parent.settings.auth_role = None
+                    parent.cache.save_agent_profile(parent.settings)
+                    _json_response(self, {"ok": True}); return
                 if parsed.path == "/api/action/sync":
                     parent.agent.request_sync_once(); _json_response(self, {"ok": True}); return
                 if parsed.path == "/api/action/heartbeat":
@@ -1168,12 +1352,13 @@ class AgentUI:
                         ) or {"host": host, "mgmt_ip": host}
                         probe = parent.agent.poller.probe_device(device_record)
                         probe_summary = probe.get("summary") if isinstance(probe, dict) and isinstance(probe.get("summary"), dict) else {}
-                        device_record["reachable"] = bool(probe.get("reachable")) if isinstance(probe, dict) else False
+                        is_reachable = bool(probe.get("reachable")) if isinstance(probe, dict) else False
+                        device_record["reachable"] = is_reachable
                         device_record["latency_ms"] = probe.get("latency_ms") if isinstance(probe, dict) else None
                         device_record["protocol"] = (probe.get("protocol") if isinstance(probe, dict) else None) or device_record.get("access_protocol")
-                        device_record["open_ports"] = probe_summary.get("port_details") or device_record.get("open_ports") or []
+                        device_record["open_ports"] = probe_summary.get("port_details") if is_reachable else []
                         device_record["interfaces"] = device_record["open_ports"]
-                        device_record["summary"] = probe_summary
+                        device_record["summary"] = probe_summary if is_reachable else {"ports": 0, "port_details": [], "note": "Latest local probe says this device is unreachable."}
                         from datetime import datetime, timezone
                         now_iso = datetime.now(timezone.utc).isoformat()
                         device_record["last_probed_at"] = now_iso
@@ -1181,6 +1366,14 @@ class AgentUI:
                             device_record["last_seen"] = now_iso
                         parent.cache.add_local_device(device_record)
                         parent.settings.local_devices = parent.cache.load_local_devices()
+                        if isinstance(probe, dict):
+                            live_probe = {**probe, "host": host, "mgmt_ip": host}
+                            current_inventory = [
+                                item for item in list(parent.agent.last_local_inventory or [])
+                                if _host_key(item.get("host") or item.get("mgmt_ip")) != _host_key(host)
+                            ]
+                            current_inventory.insert(0, live_probe)
+                            parent.agent.last_local_inventory = current_inventory
                         _json_response(self, {"ok": True, "host": host, "probe": probe, "device": device_record}); return
                     except Exception as exc:
                         _json_response(self, {"ok": False, "error": str(exc)}); return
@@ -1209,9 +1402,12 @@ class AgentUI:
                                 probe = parent.agent.poller.probe_device(device_record)
                                 if isinstance(probe, dict):
                                     summary = probe.get("summary") if isinstance(probe.get("summary"), dict) else {}
-                                    device_record["reachable"] = bool(probe.get("reachable"))
+                                    is_reachable = bool(probe.get("reachable"))
+                                    device_record["reachable"] = is_reachable
                                     device_record["latency_ms"] = probe.get("latency_ms")
-                                    device_record["open_ports"] = summary.get("port_details") or []
+                                    device_record["open_ports"] = summary.get("port_details") if is_reachable else []
+                                    device_record["interfaces"] = device_record["open_ports"]
+                                    device_record["summary"] = summary if is_reachable else {"ports": 0, "port_details": [], "note": "Latest local probe says this device is unreachable."}
                                     device_record["last_seen"] = probe.get("last_seen") or probe.get("observed_at") or None
                                     device_record["protocol"] = probe.get("protocol") or device_record["access_protocol"]
                                     device_record["device_type"] = probe.get("device_type") or device_record["device_type"]
@@ -1220,6 +1416,14 @@ class AgentUI:
                             parent.cache.add_local_device(device_record)
                             parent.settings.local_devices = parent.cache.load_local_devices()
                             parent.settings.local_targets = parent.cache.load_local_targets()
+                            if isinstance(probe, dict):
+                                live_probe = {**probe, "host": host, "mgmt_ip": host}
+                                current_inventory = [
+                                    item for item in list(parent.agent.last_local_inventory or [])
+                                    if _host_key(item.get("host") or item.get("mgmt_ip")) != _host_key(host)
+                                ]
+                                current_inventory.insert(0, live_probe)
+                                parent.agent.last_local_inventory = current_inventory
                             parent.cache.save_agent_profile(parent.settings)
                         try:
                             created = parent.client.create_device(parent.settings, data)

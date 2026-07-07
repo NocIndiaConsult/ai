@@ -102,6 +102,15 @@ def ping_host(host: str, timeout_ms: int = 800) -> dict[str, Any]:
                 break
         except Exception:
             continue
+    if not ok:
+        # A lot of ISP/customer devices only allow ICMP from the local agent
+        # while management ports are restricted. Treat a successful ICMP ping
+        # as real reachability, then collect richer details with SNMP/REST/SSH
+        # when credentials/services are available.
+        diag = run_ping_diagnostic(host, count=1, timeout_ms=timeout_ms)
+        if diag.get("success"):
+            ok = True
+            output = str(diag.get("output") or "ICMP ping replied")
     elapsed = round((perf_counter() - started) * 1000.0, 2) if ok else None
     return {
         "host": host,
@@ -706,6 +715,112 @@ class LocalNetworkPoller:
                 }
             )
         return {"host": host, "reachable": reachable or bool(output), "latency_ms": None, "ping_output": "ssh-snapshot", "device_type": "switch", "protocol": "ssh", "summary": {"ports": len(ports), "port_details": ports, "ports_down": len(down_ports), "ports_up": len(ports) - len(down_ports), "mac_table": mac_table, "note": "SSH snapshot collected."}, "alerts": alerts}
+
+    def build_onu_config_plan(self, device: dict[str, Any], payload: dict[str, Any]) -> list[str]:
+        host = self._device_host(device)
+        vendor = " ".join(
+            [
+                str(device.get("vendor") or ""),
+                str(device.get("vendor_family") or ""),
+                str(device.get("model") or ""),
+            ]
+        ).lower()
+        onu_serial = str(payload.get("onu_serial") or "").strip()
+        pon_port = str(payload.get("pon_port") or "").strip()
+        service_name = str(payload.get("service_name") or onu_serial or "ONU-SERVICE").strip()
+        vlan = str(payload.get("vlan") or "1").strip()
+        bandwidth = str(payload.get("bandwidth_mbps") or "100").strip()
+        wan_mode = str(payload.get("wan_mode") or "bridge").strip().lower()
+        pppoe_user = str(payload.get("pppoe_username") or "").strip()
+        pppoe_pass = str(payload.get("pppoe_password") or "").strip()
+        ssid = str(payload.get("ssid") or "").strip()
+        wifi_pass = str(payload.get("wifi_password") or "").strip()
+        if not onu_serial:
+            raise ValueError("ONU serial is required")
+        if not pon_port:
+            raise ValueError("PON port is required")
+
+        # Vendor CLIs differ, but most VSOL/BDCOM/Syrotech-style OLTs follow
+        # profile -> bind -> service/vlan concepts. Keep the plan explicit so
+        # the operator can verify before Apply writes anything.
+        if any(key in vendor for key in ("syrotech", "dbc", "bdcom", "vsol", "optilink", "netlink")):
+            commands = [
+                "enable",
+                "configure terminal",
+                f"interface pon {pon_port}",
+                f"onu {onu_serial}",
+                f"service-profile {service_name}",
+                f"vlan {vlan}",
+                f"bandwidth {bandwidth}",
+                f"wan mode {wan_mode}",
+            ]
+            if wan_mode == "pppoe" and pppoe_user:
+                commands.append(f"pppoe username {pppoe_user}")
+            if wan_mode == "pppoe" and pppoe_pass:
+                commands.append(f"pppoe password {pppoe_pass}")
+            if ssid:
+                commands.append(f"wifi ssid {ssid}")
+            if wifi_pass:
+                commands.append(f"wifi password {wifi_pass}")
+            commands.extend(["exit", "write memory"])
+            return commands
+        return [
+            f"# Generic ONU config plan for {host}",
+            f"onu {onu_serial}",
+            f"pon-port {pon_port}",
+            f"service {service_name}",
+            f"vlan {vlan}",
+            f"bandwidth {bandwidth}",
+            f"wan mode {wan_mode}",
+            *( [f"wifi ssid {ssid}"] if ssid else [] ),
+            *( [f"wifi password {wifi_pass}"] if wifi_pass else [] ),
+        ]
+
+    def configure_onu(self, device: dict[str, Any], payload: dict[str, Any], apply: bool = False) -> dict[str, Any]:
+        host = self._device_host(device)
+        commands = self.build_onu_config_plan(device, payload)
+        if not apply:
+            return {
+                "ok": True,
+                "mode": "dry_run",
+                "host": host,
+                "message": "Dry run only. No configuration was written to the OLT.",
+                "commands": commands,
+            }
+        username = self._norm(device.get("username"))
+        password = self._norm(device.get("password"))
+        if not username:
+            return {
+                "ok": False,
+                "mode": "apply",
+                "host": host,
+                "message": "SSH username/password required before applying ONU configuration.",
+                "commands": commands,
+            }
+        output_chunks: list[str] = []
+        try:
+            for command in commands:
+                if command.strip().startswith("#"):
+                    continue
+                output_chunks.append(f"$ {command}\n")
+                output_chunks.append(self._ssh_command(host, username, password, command, timeout=8) or "ok\n")
+            return {
+                "ok": True,
+                "mode": "apply",
+                "host": host,
+                "message": "ONU configuration commands sent to OLT.",
+                "commands": commands,
+                "output": "".join(output_chunks)[-6000:],
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "mode": "apply",
+                "host": host,
+                "message": str(exc),
+                "commands": commands,
+                "output": "".join(output_chunks)[-6000:],
+            }
 
     def _snmp_cache_key(self, host: str, community: str) -> str:
         return f"{host}|{community}"
