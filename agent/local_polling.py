@@ -541,14 +541,33 @@ class LocalNetworkPoller:
         return "auto"
 
     def _port_scan(self, host: str, ports: Iterable[int] | None = None) -> list[int]:
+        # Was a sequential loop (up to len(ports) * 0.5s in the worst case,
+        # e.g. ~4s for 8 ports on an unreachable host). Probing all ports
+        # concurrently keeps this to ~0.5s regardless of how many ports are
+        # checked, which matters since this runs once per "auto" protocol
+        # device on every poll cycle.
+        port_list = list(ports or self.common_ports)
+        if not port_list:
+            return []
         open_ports: list[int] = []
-        for port in ports or self.common_ports:
-            try:
-                with socket.create_connection((host, int(port)), timeout=0.5):
-                    open_ports.append(int(port))
-            except Exception:
-                continue
+        with ThreadPoolExecutor(max_workers=len(port_list)) as pool:
+            futures = {pool.submit(self._is_port_open, host, port, 0.5): port for port in port_list}
+            for future in as_completed(futures):
+                port = futures[future]
+                try:
+                    if future.result():
+                        open_ports.append(int(port))
+                except Exception:
+                    continue
         return open_ports
+
+    @staticmethod
+    def _is_port_open(host: str, port: int, timeout: float) -> bool:
+        try:
+            with socket.create_connection((host, int(port)), timeout=timeout):
+                return True
+        except Exception:
+            return False
 
     def _device_host(self, device: dict[str, Any] | str) -> str:
         if isinstance(device, dict):
@@ -1290,6 +1309,27 @@ class LocalNetworkPoller:
             return {"host": "", "reachable": False, "latency_ms": None, "ping_output": "invalid host", "alerts": []}
         if isinstance(device, dict):
             reach = self.probe_host(host)
+            if not reach.get("reachable"):
+                # Fast-fail path: the device does not even answer ping/TCP,
+                # so there is no point spending 6-20+ seconds trying
+                # SNMP/SSH/REST (each with its own multi-second timeout) on
+                # a host that is simply down. This was the main reason a
+                # handful of offline devices could stall an entire poll
+                # cycle and delay status updates for every other device by
+                # many minutes. Report it as offline immediately instead.
+                return {
+                    "host": host,
+                    "reachable": False,
+                    "latency_ms": reach.get("latency_ms"),
+                    "protocol": self._device_protocol(device),
+                    "ping_output": reach.get("ping_output") or "Host unreachable from this agent",
+                    "summary": {
+                        "ports": 0,
+                        "port_details": [],
+                        "note": "Device did not respond to ping/TCP; skipped SNMP/SSH/REST probe to keep the poll cycle fast.",
+                    },
+                    "alerts": [],
+                }
             protocol = self._device_protocol(device)
             if protocol == "auto":
                 scan_ports = self._port_scan(host, ports=[80, 443, 8080, 8728, 8729, 161, 22, 8291])
@@ -1443,7 +1483,11 @@ class LocalNetworkPoller:
         if not targets:
             return []
         results: list[dict[str, Any]] = [None] * len(targets)  # type: ignore[list-item]
-        max_workers = min(32, max(1, len(targets)))
+        # Raised from 32 -> 64. With the fast-fail path above, most devices
+        # (especially offline ones) finish in ~1-2s, so a larger pool lets
+        # bigger device lists complete a full cycle sooner without waiting
+        # in batches behind a small worker count.
+        max_workers = min(64, max(1, len(targets)))
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = {pool.submit(self._safe_probe, host): idx for idx, host in enumerate(targets)}
             for future in as_completed(futures):

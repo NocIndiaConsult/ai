@@ -1346,6 +1346,18 @@ class AgentUI:
                         if not host:
                             _json_response(self, {"ok": False, "error": "host is required"}, 400); return
                         devices = parent.cache.load_local_devices()
+                        # IMPORTANT: only True if this host was ALREADY a
+                        # saved/manually-added device before this probe. This
+                        # used to be missing, so simply opening a device's
+                        # detail modal (which calls this endpoint to refresh
+                        # its status) would silently re-save ANY host - even
+                        # one that was just deleted, or one only being shown
+                        # from the server's stale remote list - turning a
+                        # read-only "view details" action into an accidental
+                        # re-add every time.
+                        was_already_saved = any(
+                            str(item.get("host") or item.get("mgmt_ip") or "").strip() == host for item in devices
+                        )
                         device_record = next(
                             (item for item in devices if str(item.get("host") or item.get("mgmt_ip") or "").strip() == host),
                             None,
@@ -1364,17 +1376,19 @@ class AgentUI:
                         device_record["last_probed_at"] = now_iso
                         if device_record["reachable"]:
                             device_record["last_seen"] = now_iso
-                        parent.cache.add_local_device(device_record)
-                        parent.settings.local_devices = parent.cache.load_local_devices()
+                        if was_already_saved:
+                            parent.cache.add_local_device(device_record)
+                            parent.settings.local_devices = parent.cache.load_local_devices()
                         if isinstance(probe, dict):
                             live_probe = {**probe, "host": host, "mgmt_ip": host}
                             current_inventory = [
                                 item for item in list(parent.agent.last_local_inventory or [])
                                 if _host_key(item.get("host") or item.get("mgmt_ip")) != _host_key(host)
                             ]
-                            current_inventory.insert(0, live_probe)
+                            if was_already_saved:
+                                current_inventory.insert(0, live_probe)
                             parent.agent.last_local_inventory = current_inventory
-                        _json_response(self, {"ok": True, "host": host, "probe": probe, "device": device_record}); return
+                        _json_response(self, {"ok": True, "host": host, "probe": probe, "device": device_record, "saved": was_already_saved}); return
                     except Exception as exc:
                         _json_response(self, {"ok": False, "error": str(exc)}); return
                 if parsed.path == "/api/agent/device":
@@ -1463,6 +1477,13 @@ class AgentUI:
                 if parsed.path == "/api/targets/delete":
                     host = str(data.get("host") or "").strip()
                     if host:
+                        try:
+                            parent.client.delete_device(parent.settings, host)
+                        except Exception:
+                            # Even if the server delete fails, still remove
+                            # it locally so it doesn't linger in this agent's
+                            # UI.
+                            pass
                         parent.cache.remove_local_device(host)
                         parent.settings.local_targets = parent.cache.load_local_targets()
                         parent.settings.local_devices = parent.cache.load_local_devices()
@@ -1479,18 +1500,6 @@ class AgentUI:
                         except Exception:
                             pass
                     _json_response(self, {"ok": True}); return
-                if parsed.path == "/api/agent/device":
-                    try:
-                        host = str(data.get("mgmt_ip") or data.get("host") or "").strip()
-                        deleted = parent.client.delete_device(parent.settings, host) if host else {}
-                        if host:
-                            parent.cache.remove_local_device(host)
-                            parent.settings.local_targets = parent.cache.load_local_targets()
-                            parent.settings.local_devices = parent.cache.load_local_devices()
-                            parent.cache.save_agent_profile(parent.settings)
-                        _json_response(self, {"ok": True, "device": deleted}); return
-                    except Exception as exc:
-                        _json_response(self, {"ok": False, "error": str(exc)}); return
                 _json_response(self, {"error": "not found"}, 404)
             def do_DELETE(self) -> None:  # noqa: N802
                 parsed = urlparse(self.path)
@@ -1514,6 +1523,44 @@ class AgentUI:
                         except Exception:
                             pass
                     _json_response(self, {"ok": True}); return
+                if parsed.path == "/api/agent/device":
+                    # This is the path the "Remove device" button in the UI
+                    # actually calls (fetch(..., {method: "DELETE"})). It used
+                    # to live under do_POST by mistake, where a real DELETE
+                    # request from the browser could never reach it - every
+                    # delete click silently got a 404 and the device was
+                    # never removed, from the server OR the local cache.
+                    try:
+                        host = str(data.get("mgmt_ip") or data.get("host") or "").strip()
+                        deleted: dict[str, Any] = {}
+                        if host:
+                            try:
+                                deleted = parent.client.delete_device(parent.settings, host)
+                            except Exception as exc:
+                                # Even if the server call fails (offline,
+                                # network error, etc.), still remove it from
+                                # the local cache so it disappears from this
+                                # agent's view immediately.
+                                deleted = {"server_error": str(exc)}
+                            parent.cache.remove_local_device(host)
+                            parent.cache.remove_local_target(host)
+                            parent.settings.local_targets = parent.cache.load_local_targets()
+                            parent.settings.local_devices = parent.cache.load_local_devices()
+                            parent.cache.save_agent_profile(parent.settings)
+                            try:
+                                parent.client.save_workspace(
+                                    parent.settings,
+                                    {
+                                        "local_targets": parent.settings.local_targets,
+                                        "local_devices": parent.settings.local_devices,
+                                        "settings": {"discovery_cidr": parent.settings.discovery_cidr},
+                                    },
+                                )
+                            except Exception:
+                                pass
+                        _json_response(self, {"ok": True, "device": deleted}); return
+                    except Exception as exc:
+                        _json_response(self, {"ok": False, "error": str(exc)}); return
                 _json_response(self, {"error": "not found"}, 404)
         self.httpd = ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
         self.httpd.daemon_threads = True

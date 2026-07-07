@@ -349,6 +349,8 @@ class LocalCache:
                     "probe_error": item.get("probe_error"),
                     "summary": item.get("summary") if isinstance(item.get("summary"), dict) else {},
                     "onu_profiles": item.get("onu_profiles") if isinstance(item.get("onu_profiles"), list) else [],
+                    "discovered": bool(item.get("discovered", False)),
+                    "discovered_via": item.get("discovered_via"),
                 }
             )
         return devices
@@ -387,6 +389,8 @@ class LocalCache:
                     "probe_error": item.get("probe_error"),
                     "summary": item.get("summary") if isinstance(item.get("summary"), dict) else {},
                     "onu_profiles": item.get("onu_profiles") if isinstance(item.get("onu_profiles"), list) else [],
+                    "discovered": bool(item.get("discovered", False)),
+                    "discovered_via": item.get("discovered_via"),
                 }
             )
         self.save_setting("local_devices", cleaned)

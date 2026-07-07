@@ -205,99 +205,39 @@ class WindowsAgent:
         return snapshot
 
     def _handle_incoming_ping(self, src_ip: str) -> None:
-        """Called from the IncomingPingListener background thread whenever a
-        device - on the LAN or reachable only through a VPN tunnel - sends a
-        ping to this PC. Auto-registers it as a device the same way the
-        outward discovery scan does, so devices this agent could never have
-        guessed the IP of (a remote site behind a VPN) still get added."""
-        src_ip = str(src_ip or "").strip()
-        if not src_ip or src_ip.startswith("127.") or src_ip == "0.0.0.0":
-            return
-        now = time.time()
-        last_seen = self._recent_incoming_pings.get(src_ip)
-        self._recent_incoming_pings[src_ip] = now
-        if last_seen and now - last_seen < 30:
-            return  # already handled recently, avoid hammering the DB on ping floods
-        with self._device_lock:
-            known_hosts = {
-                str(item.get("host") or item.get("mgmt_ip") or "").strip()
-                for item in self.cache.load_local_devices()
-            }
-            if src_ip in known_hosts:
-                return
-            self.cache.add_local_device(
-                {
-                    "host": src_ip,
-                    "name": src_ip,
-                    "device_type": "host",
-                    "access_protocol": "auto",
-                    "discovered": True,
-                    "discovered_via": "incoming_ping",
-                    "discovered_at": utc_now(),
-                }
-            )
-            self.settings.local_devices = self.cache.load_local_devices()
-            self.settings.local_targets = self.cache.load_local_targets()
-            self.local_devices = self.settings.local_devices
-            self.cache.save_agent_profile(self.settings)
-        self.cache.add_event("device_auto_discovered", {"host": src_ip, "via": "incoming_ping", "at": utc_now()})
+        """Auto-discovery is disabled: devices are only ever added manually
+        now (via the UI / add-device flow). This callback is kept wired up
+        so the IncomingPingListener thread still runs without error, but it
+        no longer auto-registers any device just because it received a
+        ping."""
+        return
 
     def _run_local_poll_once(self, refresh_discovery: bool = True) -> None:
+        # Auto-discovery is intentionally gone: this agent no longer sweeps
+        # the subnet, no longer auto-registers a device just because it
+        # answered a ping, and no longer auto-adds devices from incoming
+        # pings. Only devices the user manually added (self.local_devices /
+        # self.settings.local_devices) are ever polled or reported.
         if not getattr(self.settings, "poll_enabled", True):
             return
         self.local_devices = list(getattr(self.settings, "local_devices", []) or self.cache.load_local_devices() or [])
-        targets = list(getattr(self.settings, "local_targets", []) or [])
-        cidr = getattr(self.settings, "discovery_cidr", None)
-        extra_cidrs: list[str] = []
-        if getattr(self.settings, "discovery_enabled", True) and not cidr:
-            # No CIDR configured by hand yet - work out this PC's own LAN so
-            # any device that answers a ping/probe from this machine is found
-            # automatically, without the user having to type a subnet in.
-            detected_cidr = self.poller.detect_local_cidr()
-            if detected_cidr:
-                cidr = detected_cidr
-                self.settings.discovery_cidr = detected_cidr
-                self.cache.save_agent_profile(self.settings)
-        if getattr(self.settings, "discovery_enabled", True):
-            # Also sweep every OTHER local subnet this PC is a member of
-            # (e.g. a VPN tunnel adapter's subnet), so devices reachable only
-            # over a VPN can be found by an outward scan too, not just when
-            # they happen to ping this PC first.
-            extra_cidrs = [c for c in self.poller.detect_all_local_cidrs() if c != cidr]
-        if refresh_discovery and getattr(self.settings, "discovery_enabled", True):
-            targets = self.poller.discover_targets(cidr, targets)
-            for extra_cidr in extra_cidrs:
-                for host in self.poller.discover_targets(extra_cidr, []):
-                    if host not in targets:
-                        targets.append(host)
-            self.last_discovery_at = utc_now()
-        known_hosts = {
-            str(item.get("host") or item.get("mgmt_ip") or "").strip()
-            for item in self.local_devices
-            if isinstance(item, dict)
-        }
-        # Hosts that showed up from the ping sweep but are not saved devices
-        # yet - if they answer, they get auto-added below.
-        newly_seen_hosts = [
-            str(host).strip()
-            for host in targets
-            if isinstance(host, str) and str(host).strip() and str(host).strip() not in known_hosts
-        ]
-        results: list[dict[str, Any]] = []
-        alerts: list[dict[str, Any]] = []
-        metrics: dict[str, Any] = {
-            "target_count": len(targets),
-            "discovery_cidr": cidr,
-            "poll_interval_seconds": getattr(self.settings, "poll_interval_seconds", 20),
-        }
-        poll_inputs: list[Any] = list(self.local_devices) + [{"host": host} for host in newly_seen_hosts]
-        if not poll_inputs:
-            poll_inputs = [{"host": host} for host in targets]
         devices_by_host = {
             str(item.get("host") or item.get("mgmt_ip") or "").strip(): item
             for item in self.local_devices
             if isinstance(item, dict)
         }
+        results: list[dict[str, Any]] = []
+        alerts: list[dict[str, Any]] = []
+        metrics: dict[str, Any] = {
+            "target_count": len(self.local_devices),
+            "poll_interval_seconds": getattr(self.settings, "poll_interval_seconds", 8),
+        }
+        if not devices_by_host:
+            # Nothing manually added yet - nothing to poll.
+            self.last_local_inventory = []
+            self.last_local_metrics = metrics | {"reachable_hosts": 0, "unreachable_hosts": 0}
+            self._heartbeat_once()
+            return
 
         # Stage 1: fast reachability pass. Deep SNMP/REST/SSH collection can
         # take time (especially OLT SNMP walks), but the UI must know within
@@ -341,8 +281,12 @@ class WindowsAgent:
                 "phase": "quick_reachability",
             }
 
-        auto_added = 0
-        for result in self.poller.scan(cidr=None, manual_targets=poll_inputs):
+        # Stage 2: full vendor-aware probe (SNMP/SSH/REST/etc.) for the same
+        # manually-added devices only. probe_device() itself fast-fails and
+        # skips this expensive work for any host that already failed the
+        # quick ping/TCP check, so an offline device no longer stalls the
+        # whole cycle.
+        for result in self.poller.scan(cidr=None, manual_targets=self.local_devices):
             results.append(result)
             host = str(result.get("host") or "").strip()
             device_entry = devices_by_host.get(host)
@@ -373,24 +317,6 @@ class WindowsAgent:
                     device_entry["last_seen"] = utc_now()
                 if result.get("probe_error"):
                     device_entry["probe_error"] = result.get("probe_error")
-            if host and host in newly_seen_hosts and result.get("reachable"):
-                # This device replied to a ping/probe from this PC for the
-                # first time - register it automatically so it shows up
-                # under Devices without any manual step.
-                with self._device_lock:
-                    self.cache.add_local_device(
-                        {
-                            "host": host,
-                            "name": host,
-                            "device_type": "host",
-                            "access_protocol": "auto",
-                            "discovered": True,
-                            "discovered_via": "ping_sweep",
-                            "discovered_at": utc_now(),
-                        }
-                    )
-                known_hosts.add(host)
-                auto_added += 1
             if result.get("alerts"):
                 alerts.extend(result.get("alerts") or [])
             elif not result.get("reachable"):
@@ -406,17 +332,9 @@ class WindowsAgent:
                     }
                 )
             alerts.extend(self._detect_device_health_alerts(str(result.get("host") or ""), result))
-        if auto_added:
-            self.local_devices = self.cache.load_local_devices()
-            self.settings.local_devices = self.local_devices
-            targets = self.cache.load_local_targets()
-            self.settings.local_targets = targets
-            self.cache.save_agent_profile(self.settings)
-            self.cache.add_event("device_auto_discovered", {"count": auto_added, "at": utc_now()})
+
         # Re-apply this cycle's probe results (reachable/latency/interfaces)
-        # onto self.local_devices by host. Needed as a safety net in case the
-        # auto_added reload above replaced the list objects that were
-        # mutated in-place during the scan loop.
+        # onto self.local_devices by host, as a safety net.
         results_by_host = {str(item.get("host") or "").strip(): item for item in results if isinstance(item, dict)}
         for device_entry in self.local_devices:
             if not isinstance(device_entry, dict):
@@ -449,7 +367,6 @@ class WindowsAgent:
                 device_entry["last_seen"] = utc_now()
         alerts.extend(self._detect_network_loop_alerts(results))
         self.last_local_inventory = results
-        self.cache.save_local_targets(targets)
         self.cache.save_local_devices(self.local_devices)
         self.settings.local_devices = self.local_devices
         self.last_local_alerts = alerts
@@ -470,6 +387,7 @@ class WindowsAgent:
         if self.active_local_alerts:
             self.cache.add_event("local_alert", {"alerts": self.active_local_alerts, "at": utc_now()})
         self._heartbeat_once()
+
 
     def _detect_device_health_alerts(self, host: str, result: dict[str, Any]) -> list[dict[str, Any]]:
         alerts: list[dict[str, Any]] = []
@@ -825,18 +743,14 @@ class WindowsAgent:
             self._wait_or_stop(15)
 
     def local_poll_loop(self) -> None:
-        discovery_interval = max(30, int(getattr(self.settings, "discovery_interval_seconds", 60) or 60))
-        last_discovery = 0.0
+        # Auto subnet-discovery is gone, so this loop just re-polls the
+        # manually added device list on a fixed interval.
         while self.running:
             try:
                 if self._poll_now.is_set():
                     self._poll_now.clear()
-                do_discovery = getattr(self.settings, "discovery_enabled", True) and (time.time() - last_discovery >= discovery_interval)
-                if do_discovery:
-                    self._run_local_poll_once(refresh_discovery=True)
-                    last_discovery = time.time()
-                elif getattr(self.settings, "poll_enabled", True):
-                    self._run_local_poll_once(refresh_discovery=False)
+                if getattr(self.settings, "poll_enabled", True):
+                    self._run_local_poll_once()
             except Exception as exc:
                 self.cache.set_last_error(str(exc))
                 self.cache.add_event("local_poll_error", {"error": str(exc), "at": utc_now()})
