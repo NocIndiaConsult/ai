@@ -31,7 +31,7 @@ class AgentSettings:
     discovery_cidr: str | None = None
     local_targets: list[str] = field(default_factory=list)
     local_devices: list[dict[str, Any]] = field(default_factory=list)
-    poll_interval_seconds: int = 20
+    poll_interval_seconds: int = 8
     discovery_interval_seconds: int = 60
     max_discovery_hosts: int = 32
     common_ports: list[int] = field(default_factory=lambda: [22, 23, 80, 443, 161, 8291, 8080])

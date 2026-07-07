@@ -298,6 +298,49 @@ class WindowsAgent:
             for item in self.local_devices
             if isinstance(item, dict)
         }
+
+        # Stage 1: fast reachability pass. Deep SNMP/REST/SSH collection can
+        # take time (especially OLT SNMP walks), but the UI must know within
+        # seconds whether a saved device is online/offline. Probe plain hosts
+        # first, update the in-memory state immediately, then continue with
+        # the richer vendor-aware probe below.
+        quick_hosts = [host for host in devices_by_host if host]
+        if quick_hosts:
+            quick_results = self.poller.scan(cidr=None, manual_targets=quick_hosts)
+            quick_by_host = {
+                str(item.get("host") or "").strip(): item
+                for item in quick_results
+                if isinstance(item, dict)
+            }
+            for host, result in quick_by_host.items():
+                device_entry = devices_by_host.get(host)
+                if not device_entry:
+                    continue
+                is_reachable = bool(result.get("reachable"))
+                device_entry["reachable"] = is_reachable
+                device_entry["latency_ms"] = result.get("latency_ms")
+                device_entry["last_probed_at"] = utc_now()
+                if is_reachable:
+                    device_entry["last_seen"] = utc_now()
+                    device_entry.pop("offline_reason", None)
+                else:
+                    device_entry["open_ports"] = []
+                    device_entry["interfaces"] = []
+                    device_entry["summary"] = {
+                        "ports": 0,
+                        "port_details": [],
+                        "note": "Latest fast reachability check says this device is unreachable.",
+                    }
+                    device_entry["offline_reason"] = result.get("ping_output") or "Host unreachable from this agent"
+            self.last_local_inventory = quick_results
+            self.cache.save_local_devices(self.local_devices)
+            self.settings.local_devices = self.local_devices
+            self.last_local_metrics = metrics | {
+                "reachable_hosts": sum(1 for item in quick_results if item.get("reachable")),
+                "unreachable_hosts": sum(1 for item in quick_results if not item.get("reachable")),
+                "phase": "quick_reachability",
+            }
+
         auto_added = 0
         for result in self.poller.scan(cidr=None, manual_targets=poll_inputs):
             results.append(result)
@@ -782,7 +825,6 @@ class WindowsAgent:
             self._wait_or_stop(15)
 
     def local_poll_loop(self) -> None:
-        interval = max(10, int(getattr(self.settings, "poll_interval_seconds", 20) or 20))
         discovery_interval = max(30, int(getattr(self.settings, "discovery_interval_seconds", 60) or 60))
         last_discovery = 0.0
         while self.running:
@@ -798,6 +840,11 @@ class WindowsAgent:
             except Exception as exc:
                 self.cache.set_last_error(str(exc))
                 self.cache.add_event("local_poll_error", {"error": str(exc), "at": utc_now()})
+            # Re-read the interval every loop (not just once at thread start)
+            # so a changed setting takes effect immediately, and a low floor
+            # (5s) so an offline transition is caught and alerted on within
+            # seconds instead of waiting a fixed 10-20s.
+            interval = max(5, int(getattr(self.settings, "poll_interval_seconds", 8) or 8))
             self._wait_or_stop(interval)
 
     def _wait_or_stop(self, seconds: float) -> None:

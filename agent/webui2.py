@@ -1107,7 +1107,7 @@ def _build_html() -> str:
       setTimeout(load, 150);
     }
     async function saveSettings(){ const payload = {server_url: document.getElementById("serverUrl").value.trim(), company_id: parseInt(document.getElementById("companyId").value || "1", 10), name: document.getElementById("agentNameInput").value.trim(), discovery_cidr: document.getElementById("discoveryCidr").value.trim(), local_targets: document.getElementById("localTargets").value.split(",").map(s=>s.trim()).filter(Boolean), local_devices: (state.payload.local_devices || [])}; await fetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}); try { await fetch('/api/agent/workspace', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({local_targets: payload.local_targets, local_devices: payload.local_devices, settings:{discovery_cidr: payload.discovery_cidr}})}); } catch(e) {} setTimeout(load, 300); }
-    setTab('dashboard'); load(); setInterval(load, 2500);
+    setTab('dashboard'); load(); setInterval(load, 1000);
   </script>
 </body>
 </html>"""

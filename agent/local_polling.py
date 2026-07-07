@@ -7,9 +7,12 @@ import socket
 import re
 import subprocess
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Callable, Iterable
+
+_SNMP_LOCK = threading.Lock()
 
 try:
     import requests
@@ -89,24 +92,42 @@ async def _snmp_walk_async(host: str, community: str, oid: str, timeout: float, 
     return rows
 
 
-def ping_host(host: str, timeout_ms: int = 800) -> dict[str, Any]:
-    timeout_s = max(0.2, timeout_ms / 1000.0)
+def ping_host(host: str, timeout_ms: int = 1200) -> dict[str, Any]:
+    """Fast reachability check.
+
+    Previously this tried 7 TCP ports one after another (up to ~5-6s of
+    pure waiting on a fully offline host) and only then fell back to an
+    ICMP ping. On a poll cycle with several offline devices that serial
+    wait added up to tens of seconds per cycle, which is what made the
+    dashboard feel "hung" and made status updates (and alerts) lag far
+    behind real device state. TCP ports are raced in parallel; ICMP runs
+    only after TCP fails so Windows does not spawn ping.exe on every
+    successful TCP probe.
+    """
+    timeout_s = max(0.15, timeout_ms / 1000.0)
     started = perf_counter()
-    ok = False
-    output = "No TCP probe hit"
-    for port in (443, 80, 22, 161, 8291, 23, 8080):
+    ports = (443, 80, 22, 161, 8291, 23, 8080)
+
+    def _try_port(port: int) -> tuple[int, bool]:
         try:
             with socket.create_connection((host, int(port)), timeout=timeout_s):
+                return port, True
+        except Exception:
+            return port, False
+
+    ok = False
+    output = "No TCP probe hit"
+    with ThreadPoolExecutor(max_workers=len(ports)) as pool:
+        futures = {pool.submit(_try_port, p): p for p in ports}
+        for future in as_completed(futures):
+            port, hit = future.result()
+            if hit:
                 ok = True
                 output = f"TCP probe connected on port {port}"
                 break
-        except Exception:
-            continue
     if not ok:
-        # A lot of ISP/customer devices only allow ICMP from the local agent
-        # while management ports are restricted. Treat a successful ICMP ping
-        # as real reachability, then collect richer details with SNMP/REST/SSH
-        # when credentials/services are available.
+        # VPN/tunnel paths often expose no management TCP port to this PC
+        # while still being reachable by ICMP. Run ping only as fallback.
         diag = run_ping_diagnostic(host, count=1, timeout_ms=timeout_ms)
         if diag.get("success"):
             ok = True
@@ -141,6 +162,24 @@ def _is_windows() -> bool:
     return platform.system().lower().startswith("win")
 
 
+def _subprocess_hidden_kwargs() -> dict[str, Any]:
+    if not _is_windows():
+        return {}
+    kwargs: dict[str, Any] = {}
+    try:
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0
+        kwargs["startupinfo"] = startupinfo
+    except Exception:
+        pass
+    try:
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+    except Exception:
+        pass
+    return kwargs
+
+
 def _safe_target(target: str) -> str:
     """Keep only characters valid in a hostname/IP so user input can never be
     used to inject extra shell/CLI arguments into the ping/tracert command."""
@@ -169,6 +208,7 @@ def run_ping_diagnostic(target: str, count: int = 4, timeout_ms: int = 1000) -> 
             capture_output=True,
             text=True,
             timeout=(count * timeout_ms / 1000.0) + 8,
+            **_subprocess_hidden_kwargs(),
         )
         output = ((proc.stdout or "") + (proc.stderr or "")).strip()
         success = proc.returncode == 0
@@ -196,7 +236,13 @@ def run_traceroute_diagnostic(target: str, max_hops: int = 30) -> dict[str, Any]
     else:
         cmd = ["traceroute", "-m", str(max_hops), host]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=max_hops * 2 + 15)
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=max_hops * 2 + 15,
+            **_subprocess_hidden_kwargs(),
+        )
         output = ((proc.stdout or "") + (proc.stderr or "")).strip()
         success = proc.returncode == 0
     except FileNotFoundError:
@@ -847,66 +893,71 @@ class LocalNetworkPoller:
         across Cisco, HPE, TP-Link, D-Link, Grandstream, and unbranded gear
         without a vendor-specific parser."""
         key = self._snmp_cache_key(host, community)
-        for mp_model in self._snmp_versions_to_try(host, community):
-            rows: list[tuple[str, str]] = []
-            if SNMP_MODE == "asyncio":
-                try:
-                    rows = asyncio.run(_snmp_walk_async(host, community, oid, timeout, retries, mp_model))
-                except Exception:
-                    rows = []
-            elif SNMP_MODE == "sync" and nextCmd is not None:
-                try:
-                    iterator = nextCmd(
-                        SnmpEngine(),
-                        CommunityData(community, mpModel=mp_model),
-                        UdpTransportTarget((host, 161), timeout=timeout, retries=retries),
-                        ContextData(),
-                        ObjectType(ObjectIdentity(oid)),
-                        lexicographicMode=False,
-                    )
-                    for error_indication, error_status, error_index, var_binds in iterator:
-                        if error_indication or error_status:
-                            break
-                        for var_bind in var_binds:
-                            oid_obj, value_obj = var_bind
-                            full_oid = str(oid_obj)
-                            if not full_oid.startswith(oid):
-                                continue
-                            rows.append((full_oid[len(oid):].lstrip("."), str(value_obj)))
-                except Exception:
-                    rows = []
-            if rows:
-                self._snmp_version_cache[key] = mp_model
-                return rows
+        # pysnmp's asyncio transport is not reliably thread-safe on Windows.
+        # Other probes may run in parallel, but SNMP walks/gets are serialized
+        # so OLT ifTable walks do not randomly come back empty.
+        with _SNMP_LOCK:
+            for mp_model in self._snmp_versions_to_try(host, community):
+                rows: list[tuple[str, str]] = []
+                if SNMP_MODE == "asyncio":
+                    try:
+                        rows = asyncio.run(_snmp_walk_async(host, community, oid, timeout, retries, mp_model))
+                    except Exception:
+                        rows = []
+                elif SNMP_MODE == "sync" and nextCmd is not None:
+                    try:
+                        iterator = nextCmd(
+                            SnmpEngine(),
+                            CommunityData(community, mpModel=mp_model),
+                            UdpTransportTarget((host, 161), timeout=timeout, retries=retries),
+                            ContextData(),
+                            ObjectType(ObjectIdentity(oid)),
+                            lexicographicMode=False,
+                        )
+                        for error_indication, error_status, error_index, var_binds in iterator:
+                            if error_indication or error_status:
+                                break
+                            for var_bind in var_binds:
+                                oid_obj, value_obj = var_bind
+                                full_oid = str(oid_obj)
+                                if not full_oid.startswith(oid):
+                                    continue
+                                rows.append((full_oid[len(oid):].lstrip("."), str(value_obj)))
+                    except Exception:
+                        rows = []
+                if rows:
+                    self._snmp_version_cache[key] = mp_model
+                    return rows
         return []
 
     def _snmp_get_ok(self, host: str, community: str, oid: str, timeout: float = 2.0, retries: int = 1) -> bool:
         key = self._snmp_cache_key(host, community)
-        for mp_model in self._snmp_versions_to_try(host, community):
-            ok = False
-            if SNMP_MODE == "asyncio":
-                try:
-                    result = asyncio.run(_snmp_get_async(host, community, oid, timeout, retries, mp_model))
-                    ok = result is not None
-                except Exception:
-                    ok = False
-            elif SNMP_MODE == "sync" and getCmd is not None:
-                try:
-                    iterator = getCmd(
-                        SnmpEngine(),
-                        CommunityData(community, mpModel=mp_model),
-                        UdpTransportTarget((host, 161), timeout=timeout, retries=retries),
-                        ContextData(),
-                        ObjectType(ObjectIdentity(oid)),
-                    )
-                    for error_indication, error_status, error_index, var_binds in iterator:
-                        ok = not error_indication and not error_status
-                        break
-                except Exception:
-                    ok = False
-            if ok:
-                self._snmp_version_cache[key] = mp_model
-                return True
+        with _SNMP_LOCK:
+            for mp_model in self._snmp_versions_to_try(host, community):
+                ok = False
+                if SNMP_MODE == "asyncio":
+                    try:
+                        result = asyncio.run(_snmp_get_async(host, community, oid, timeout, retries, mp_model))
+                        ok = result is not None
+                    except Exception:
+                        ok = False
+                elif SNMP_MODE == "sync" and getCmd is not None:
+                    try:
+                        iterator = getCmd(
+                            SnmpEngine(),
+                            CommunityData(community, mpModel=mp_model),
+                            UdpTransportTarget((host, 161), timeout=timeout, retries=retries),
+                            ContextData(),
+                            ObjectType(ObjectIdentity(oid)),
+                        )
+                        for error_indication, error_status, error_index, var_binds in iterator:
+                            ok = not error_indication and not error_status
+                            break
+                    except Exception:
+                        ok = False
+                if ok:
+                    self._snmp_version_cache[key] = mp_model
+                    return True
         return False
 
     def _snmp_interface_table(self, host: str, community: str) -> dict[str, dict[str, Any]]:
@@ -1199,15 +1250,26 @@ class LocalNetworkPoller:
         ping = ping_host(host)
         open_ports: list[int] = []
         closed_ports: list[int] = []
-        for port in self.common_ports:
-            probe = tcp_probe(host, port)
-            if probe.get("open"):
-                open_ports.append(port)
-            else:
-                closed_ports.append(port)
+        probe_results: dict[int, dict[str, Any]] = {}
+        with ThreadPoolExecutor(max_workers=max(1, len(self.common_ports))) as pool:
+            futures = {pool.submit(tcp_probe, host, port): port for port in self.common_ports}
+            for future in as_completed(futures):
+                port = futures[future]
+                try:
+                    probe = future.result()
+                except Exception as exc:
+                    probe = {"port": port, "open": False, "error": str(exc)}
+                probe_results[port] = probe
+                if probe.get("open"):
+                    open_ports.append(port)
+                else:
+                    closed_ports.append(port)
         if not ping["reachable"] and open_ports:
             ping["reachable"] = True
-            ping["latency_ms"] = min((probe.get("latency_ms") for probe in (tcp_probe(host, p) for p in open_ports) if probe.get("latency_ms") is not None), default=None)
+            ping["latency_ms"] = min(
+                (probe_results[p].get("latency_ms") for p in open_ports if probe_results[p].get("latency_ms") is not None),
+                default=None,
+            )
             ping["ping_output"] = f"Reachable via TCP probe; open ports: {', '.join(str(p) for p in open_ports[:6])}"
         result = LocalProbeResult(
             host=host,
@@ -1357,11 +1419,46 @@ class LocalNetworkPoller:
                 pass
         return targets[: self.max_discovery_hosts]
 
-    def scan(self, cidr: str | None, manual_targets: Iterable[str | dict[str, Any]] | None = None) -> list[dict[str, Any]]:
-        results: list[dict[str, Any]] = []
-        for host in self.discover_targets(cidr, manual_targets):
+    def _safe_probe(self, host: str | dict[str, Any]) -> dict[str, Any]:
+        target_host = self._device_host(host) if isinstance(host, dict) else str(host)
+        try:
             if isinstance(host, dict):
-                results.append(self.probe_device(host))
-            else:
-                results.append(self.probe_host(host))
+                return self.probe_device(host)
+            return self.probe_host(host)
+        except Exception as exc:
+            # Never let one bad device (SNMP/SSH/REST crash, DNS error, etc.)
+            # take down the whole scan - every other host in this cycle must
+            # still get probed and reported.
+            return {
+                "host": target_host,
+                "reachable": False,
+                "latency_ms": None,
+                "ping_output": "probe error",
+                "probe_error": str(exc),
+                "alerts": [],
+            }
+
+    def scan(self, cidr: str | None, manual_targets: Iterable[str | dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+        targets = list(self.discover_targets(cidr, manual_targets))
+        if not targets:
+            return []
+        results: list[dict[str, Any]] = [None] * len(targets)  # type: ignore[list-item]
+        max_workers = min(32, max(1, len(targets)))
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {pool.submit(self._safe_probe, host): idx for idx, host in enumerate(targets)}
+            for future in as_completed(futures):
+                idx = futures[future]
+                try:
+                    results[idx] = future.result()
+                except Exception as exc:
+                    host = targets[idx]
+                    target_host = self._device_host(host) if isinstance(host, dict) else str(host)
+                    results[idx] = {
+                        "host": target_host,
+                        "reachable": False,
+                        "latency_ms": None,
+                        "ping_output": "probe error",
+                        "probe_error": str(exc),
+                        "alerts": [],
+                    }
         return results
